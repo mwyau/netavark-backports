@@ -45,24 +45,15 @@ DIR="$(find . -maxdepth 1 -mindepth 1 -type d -name 'netavark-*' -print -quit)"
 [[ -n "$DIR" ]] || { echo "Missing extracted Debian source" >&2; exit 1; }
 cd "$DIR"
 [[ "$(dpkg-parsechangelog -SVersion)" == "$BASE" ]] || { echo "Source version changed" >&2; exit 1; }
+# Apply the version-specific, reviewed unified-diff patch with Debian quilt.
+# No Python rewriting of upstream source is performed during the package build.
 export QUILT_PATCHES=debian/patches
-quilt new 9999-allow-cross-bridge-published-ports.patch
-quilt add src/firewall/nft.rs
-python3 /work/scripts/apply.py --family "$FAMILY"
-quilt refresh
-python3 - debian/patches/9999-allow-cross-bridge-published-ports.patch <<'PY'
-from pathlib import Path
-import sys
-f=Path(sys.argv[1])
-f.write_text("""Description: Backport cross-bridge published-port forwarding
- Mark Netavark DNAT connections and accept before bridge isolation.
-Origin: backport, https://github.com/containers/netavark/pull/1483
-Bug: https://github.com/containers/netavark/issues/709
-Forwarded: not-needed
-Last-Update: 2026-10-26
-
-""" + f.read_text())
-PY
+PATCH_NAME=9999-allow-cross-bridge-published-ports.patch
+cp "/work/patches/$FAMILY/0001-allow-published-ports-across-isolated-bridges.patch" "debian/patches/$PATCH_NAME"
+printf '%s\n' "$PATCH_NAME" >> debian/patches/series
+quilt push "$PATCH_NAME"
+grep -Fq 'const DNAT_MASK: u32 = 0x1000;' src/firewall/nft.rs
+grep -Fq 'Mark only connections' src/firewall/nft.rs || grep -Fq 'Flag published-port DNAT' src/firewall/nft.rs
 
 export DEBFULLNAME="xddd Netavark Backport"
 export DEBEMAIL="netavark-backport@localhost"
@@ -80,5 +71,16 @@ files=("netavark_${VERSION}_${ARCH}.deb" "netavark_${VERSION}.dsc"
   "netavark_${VERSION}_${ARCH}.buildinfo" "netavark_${VERSION}_${ARCH}.changes")
 for file in "${files[@]}"; do [[ ! -f "$file" ]] || cp "$file" "$OUT/"; done
 [[ -f "$OUT/netavark_${VERSION}_${ARCH}.deb" ]] || { echo "Missing built .deb" >&2; exit 1; }
+# Validate the binary package metadata and execute the packaged binary.
+DEB="$OUT/netavark_${VERSION}_${ARCH}.deb"
+[[ "$(dpkg-deb --field "$DEB" Package)" == "netavark" ]]
+[[ "$(dpkg-deb --field "$DEB" Version)" == "$VERSION" ]]
+[[ "$(dpkg-deb --field "$DEB" Architecture)" == "$ARCH" ]]
+TMP_BIN="$(mktemp -d)"
+trap 'rm -rf "$TMP_BIN"' EXIT
+dpkg-deb --extract "$DEB" "$TMP_BIN"
+BIN="$(find "$TMP_BIN" -type f -name netavark -perm /111 -print -quit)"
+[[ -n "$BIN" ]] || { echo "Netavark binary missing in deb" >&2; exit 1; }
+"$BIN" --version | grep -F 'netavark'
 (cd "$OUT"; sha256sum -- * > SHA256SUMS)
 ls -lh "$OUT"
