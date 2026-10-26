@@ -67,6 +67,9 @@ jobs:
     needs: [build]
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
+    permissions:
+      contents: read
+      actions: read
     strategy:
       fail-fast: false
       matrix:
@@ -77,10 +80,16 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - uses: actions/download-artifact@v8
-        with:
-          name: netavark-trixie-${{ matrix.arch }}
-          path: packages
+      - name: Download Trixie package via GitHub CLI
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh run download "$GITHUB_RUN_ID" \
+            --repo "$GITHUB_REPOSITORY" \
+            --name "netavark-trixie-${{ matrix.arch }}" \
+            --dir packages
       - name: Regression test inside disposable privileged container
         shell: bash
         run: |
@@ -99,13 +108,21 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: write
+      actions: read
     steps:
       - name: Collect packages from successful matrix
-        uses: actions/download-artifact@v8
-        with:
-          pattern: netavark-*
-          path: packages
-          merge-multiple: true
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh run download "$GITHUB_RUN_ID" \
+            --repo "$GITHUB_REPOSITORY" \
+            --pattern 'netavark-*' \
+            --dir packages
+          # gh preserves each artifact's directory; flatten only the main .deb files.
+          find packages -mindepth 2 -type f -name 'netavark_*_*.deb' \
+            -exec cp -- '{}' packages/ \;
       - name: Verify expected package assets
         shell: bash
         run: |
