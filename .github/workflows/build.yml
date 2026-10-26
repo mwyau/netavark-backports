@@ -1,0 +1,56 @@
+name: Debian Netavark backport
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: ${{ matrix.suite }} / ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    continue-on-error: ${{ matrix.suite == 'experimental' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {suite: trixie, arch: amd64, runner: ubuntu-24.04}
+          - {suite: trixie, arch: arm64, runner: ubuntu-24.04-arm}
+          - {suite: forky, arch: amd64, runner: ubuntu-24.04}
+          - {suite: forky, arch: arm64, runner: ubuntu-24.04-arm}
+          - {suite: sid, arch: amd64, runner: ubuntu-24.04}
+          - {suite: sid, arch: arm64, runner: ubuntu-24.04-arm}
+          - {suite: experimental, arch: amd64, runner: ubuntu-24.04}
+          - {suite: experimental, arch: arm64, runner: ubuntu-24.04-arm}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Validate build scripts
+        run: |
+          bash -n scripts/build.sh
+          python3 -m py_compile scripts/apply.py
+      - name: Build Debian source and package natively
+        shell: bash
+        run: |
+          set -euo pipefail
+          image="debian:${{ matrix.suite == 'experimental' && 'sid' || matrix.suite }}"
+          docker run --rm --pull=always \
+            -v "$GITHUB_WORKSPACE:/work" -w /work \
+            -e SUITE="${{ matrix.suite }}" \
+            -e EXPECTED_ARCH="${{ matrix.arch }}" \
+            -e REVISION=1 \
+            "$image" bash scripts/build.sh
+      - name: Upload package artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: netavark-${{ matrix.suite }}-${{ matrix.arch }}
+          path: dist/${{ matrix.suite }}/${{ matrix.arch }}/*
+          if-no-files-found: error
+          retention-days: 14
