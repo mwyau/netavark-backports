@@ -1,0 +1,79 @@
+Description: Backport published port access across isolated bridges
+ Preserve Netavark's DNAT destination markings so forwarded published-port
+ traffic is accepted before inter-bridge isolation is enforced.
+Origin: backport, https://github.com/containers/netavark/pull/1483
+Bug: https://github.com/containers/netavark/issues/709
+Forwarded: not-needed
+Last-Update: 2026-10-26
+
+--- a/src/firewall/nft.rs
++++ b/src/firewall/nft.rs
+@@ -30,6 +30,7 @@
+ const ISOLATION3CHAIN: &str = "NETAVARK-ISOLATION-3";
+ 
+ const MASK: u32 = 0x2000;
++const DNAT_MASK: u32 = 0x1000;
+ 
+ /// The dnat priority for chains
+ /// This (and the below) are based on https://wiki.nftables.org/wiki-nftables/index.php/Netfilter_hooks#Priority_within_hook
+@@ -247,6 +248,39 @@
+             ));
+         }
+ 
++        // Accept DNAT published ports before inter-bridge isolation (PR #1483).
++        let match_dnat_mark = |r: &schema::Rule| -> bool {
++            for statement in r.expr.deref() {
++                if let stmt::Statement::Match(m) = statement {
++                    if matches!(&m.right, expr::Expression::Number(n) if *n == DNAT_MASK) {
++                        return true;
++                    }
++                }
++            }
++            false
++        };
++        if get_matching_rules_in_chain(&existing_rules, FORWARDCHAIN, match_dnat_mark).is_empty() {
++            batch.add(make_rule(
++                Cow::Borrowed(FORWARDCHAIN),
++                Cow::Owned(vec![
++                    stmt::Statement::Match(stmt::Match {
++                        left: expr::Expression::BinaryOperation(Box::new(
++                            expr::BinaryOperation::AND(
++                                expr::Expression::Named(expr::NamedExpression::CT(expr::CT {
++                                    key: Cow::Borrowed("mark"),
++                                    family: None,
++                                    dir: None,
++                                })),
++                                expr::Expression::Number(DNAT_MASK),
++                            ),
++                        )),
++                        right: expr::Expression::Number(DNAT_MASK),
++                        op: stmt::Operator::EQ,
++                    }),
++                    stmt::Statement::Accept(None),
++                ]),
++            ));
++        }
+         // Forward chain: jump NETAVARK-ISOLATION-1
+         if get_matching_rules_in_chain(
+             &existing_rules,
+@@ -961,6 +995,20 @@
+             right: expr::Expression::Number(host_port),
+             op: stmt::Operator::EQ,
+         }));
++        // Flag published-port DNAT to bypass bridge isolation in FORWARD.
++        statements.push(stmt::Statement::Mangle(stmt::Mangle {
++            key: expr::Expression::Named(expr::NamedExpression::CT(expr::CT {
++                key: Cow::Borrowed("mark"),
++                family: None,
++                dir: None,
++            })),
++            value: expr::Expression::BinaryOperation(Box::new(expr::BinaryOperation::OR(vec![
++                expr::Expression::Named(expr::NamedExpression::Meta(expr::Meta {
++                    key: expr::MetaKey::Mark,
++                })),
++                expr::Expression::Number(DNAT_MASK),
++            ]))),
++        }));
+         statements.push(stmt::Statement::DNAT(Some(stmt::NAT {
+             addr: Some(expr::Expression::String(Cow::Owned(ip.to_string()))),
+             family: Some(if ip.is_ipv6() {
