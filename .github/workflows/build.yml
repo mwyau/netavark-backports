@@ -29,13 +29,15 @@ jobs:
           - {suite: experimental, arch: arm64, runner: ubuntu-24.04-arm}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           persist-credentials: false
       - name: Validate build scripts
         run: |
           bash -n scripts/build.sh
-          python3 -m py_compile scripts/apply.py
+          test -f patches/1.14/0001-allow-published-ports-across-isolated-bridges.patch
+          test -f patches/1.17/0001-allow-published-ports-across-isolated-bridges.patch
+          test -f patches/2.0/0001-allow-published-ports-across-isolated-bridges.patch
       - name: Build Debian source and package natively
         shell: bash
         run: |
@@ -48,9 +50,53 @@ jobs:
             -e REVISION=1 \
             "$image" bash scripts/build.sh
       - name: Upload package artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: netavark-${{ matrix.suite }}-${{ matrix.arch }}
           path: dist/${{ matrix.suite }}/${{ matrix.arch }}/*
           if-no-files-found: error
           retention-days: 14
+
+  draft-release:
+    name: Attach .deb files to draft GitHub Release
+    needs: [build]
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Collect packages from successful matrix
+        uses: actions/download-artifact@v8
+        with:
+          pattern: netavark-*
+          path: packages
+          merge-multiple: true
+      - name: Verify expected package assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          debs=(packages/netavark_*_amd64.deb packages/netavark_*_arm64.deb)
+          if (( ${#debs[@]} != 8 )); then
+            printf 'Expected eight main netavark .deb files, found %s\n' "${#debs[@]}" >&2
+            exit 1
+          fi
+          sha256sum "${debs[@]}" | tee packages/SHA256SUMS-release
+      - name: Create draft release and upload raw .deb files
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          short="${GITHUB_SHA:0:12}"
+          tag="ci-${short}"
+          gh release create "$tag" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --draft \
+            --prerelease \
+            --title "CI packages ${short} (NOT runtime validated)" \
+            --notes "Unofficial Netavark Debian backport. All eight Debian package builds passed. These binaries have NOT yet passed cross-bridge Podman network integration tests; do not deploy on production DNS."
+          gh release upload "$tag" packages/netavark_*_amd64.deb packages/netavark_*_arm64.deb packages/SHA256SUMS-release \
+            --repo "$GITHUB_REPOSITORY"
+          gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json url,isDraft,assets
