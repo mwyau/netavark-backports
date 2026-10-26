@@ -15,6 +15,8 @@ dpkg-query -W netavark podman aardvark-dns
 podman info --format '{{.Host.NetworkBackend}}' | grep -Fx netavark
 
 # Avoid overlay-on-overlay inside a Docker runner.
+# Inner Podman containers use --cgroups=disabled because GitHub's Docker
+# cgroup namespace does not delegate the pids/cpuset controllers to crun.
 mkdir -p /etc/containers
 cat >/etc/containers/storage.conf <<'EOF'
 [storage]
@@ -33,7 +35,7 @@ trap cleanup EXIT
 # but a container's host-published port must be reachable.
 podman network create --subnet 10.241.21.0/24 --opt isolate=true nv_source
 podman network create --subnet 10.241.22.0/24 --opt isolate=true nv_target
-podman run -d --name nv_server --network nv_target \
+podman run --cgroups=disabled -d --name nv_server --network nv_target \
   -p 0.0.0.0:18081:8080 docker.io/library/alpine:3.20 \
   sh -c 'mkdir -p /www; echo PUBLISHED_PORT_OK >/www/index.html; busybox httpd -f -p 8080 -h /www'
 
@@ -44,7 +46,7 @@ nft list ruleset | grep -E 'ct mark set.*0x00001000.*dnat'
 # Query through the source network's gateway IP, not the target container IP.
 # Repeated attempts accommodate the HTTP server startup without hiding a timeout.
 for attempt in 1 2 3 4 5; do
-  if podman run --rm --network nv_source docker.io/library/alpine:3.20 \
+  if podman run --cgroups=disabled --rm --network nv_source docker.io/library/alpine:3.20 \
       wget -q -T 5 -O- http://10.241.21.1:18081/ | grep -q '^PUBLISHED_PORT_OK$'; then
     echo "PASS: isolated source bridge reached target published host port"
     exit 0
