@@ -22,7 +22,7 @@ Types: deb deb-src
 URIs: http://deb.debian.org/debian
 Suites: sid experimental
 Components: main
-Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg
+Signed-By: /usr/share/keyrings/debian-archive-keyring.pgp
 EOF
 else
   cat >/etc/apt/sources.list.d/netavark-source.sources <<EOF
@@ -30,7 +30,7 @@ Types: deb-src
 URIs: http://deb.debian.org/debian
 Suites: $SUITE
 Components: main
-Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg
+Signed-By: /usr/share/keyrings/debian-archive-keyring.pgp
 EOF
 fi
 
