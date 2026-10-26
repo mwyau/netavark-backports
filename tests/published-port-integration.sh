@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+# Smoke + integration regression for Netavark PR #1483.
+# Designed for a disposable, privileged Debian Docker container in GitHub Actions.
+set -Eeuo pipefail
+export DEBIAN_FRONTEND=noninteractive
+export NETAVARK_FW=nftables
+ARCH="$(dpkg --print-architecture)"
+apt-get update
+apt-get install -y --no-install-recommends podman aardvark-dns curl jq nftables iproute2 ca-certificates
+shopt -s nullglob
+DEBS=(/packages/netavark_*_"$ARCH".deb)
+[[ "${#DEBS[@]}" == 1 ]] || { echo "Expected one netavark package for $ARCH, found ${#DEBS[@]}" >&2; exit 1; }
+apt-get install -y "${DEBS[0]}"
+dpkg-query -W netavark podman aardvark-dns
+podman info --format '{{.Host.NetworkBackend}}' | grep -Fx netavark
+
+# Avoid overlay-on-overlay inside a Docker runner.
+mkdir -p /etc/containers
+cat >/etc/containers/storage.conf <<'EOF'
+[storage]
+driver = "vfs"
+runroot = "/run/containers/storage"
+graphroot = "/var/lib/containers/storage"
+EOF
+
+cleanup() {
+  podman rm -f nv_server nv_client >/dev/null 2>&1 || true
+  podman network rm nv_source nv_target >/dev/null 2>&1 || true
+}
+trap cleanup EXIT
+
+# Distinct isolated networks: direct cross-network traffic should remain isolated,
+# but a container's host-published port must be reachable.
+podman network create --subnet 10.241.21.0/24 --opt isolate=true nv_source
+podman network create --subnet 10.241.22.0/24 --opt isolate=true nv_target
+podman run -d --name nv_server --network nv_target \
+  -p 0.0.0.0:18081:8080 docker.io/library/alpine:3.20 \
+  sh -c 'mkdir -p /www; echo PUBLISHED_PORT_OK >/www/index.html; busybox httpd -f -p 8080 -h /www'
+
+# Check that actual nftables rules include both halves of the backport.
+nft list chain inet netavark FORWARD | grep -E 'ct mark.*0x00001000.*accept'
+nft list ruleset | grep -E 'ct mark set.*0x00001000.*dnat'
+
+# Query through the source network's gateway IP, not the target container IP.
+# Repeated attempts accommodate the HTTP server startup without hiding a timeout.
+for attempt in 1 2 3 4 5; do
+  if podman run --rm --network nv_source docker.io/library/alpine:3.20 \
+      wget -q -T 5 -O- http://10.241.21.1:18081/ | grep -q '^PUBLISHED_PORT_OK$'; then
+    echo "PASS: isolated source bridge reached target published host port"
+    exit 0
+  fi
+  sleep 2
+done
+echo "FAIL: published-port cross-bridge connection was not established" >&2
+exit 1
