@@ -39,19 +39,37 @@ podman run --cgroups=disabled -d --name nv_server --network nv_target \
   -p 0.0.0.0:18081:8080 docker.io/library/alpine:3.20 \
   sh -c 'mkdir -p /www; echo PUBLISHED_PORT_OK >/www/index.html; busybox httpd -f -p 8080 -h /www'
 
-# Check that actual nftables rules include both halves of the backport.
-nft list chain inet netavark FORWARD | grep -E 'ct mark.*0x00001000.*accept'
+# Check that both halves of the patch are present, and that the accept rule
+# precedes isolation. Merely finding the mark rule is insufficient.
+forward_rules="$(nft list chain inet netavark FORWARD)"
+printf '%s\n' "$forward_rules"
+mark_line="$(printf '%s\n' "$forward_rules" | grep -nE 'ct mark.*0x00001000.*accept' | head -n1 | cut -d: -f1)"
+isolation_line="$(printf '%s\n' "$forward_rules" | grep -n 'jump NETAVARK-ISOLATION-1' | head -n1 | cut -d: -f1)"
+[[ -n "$mark_line" && -n "$isolation_line" && "$mark_line" -lt "$isolation_line" ]] || {
+  echo "FAIL: published-port accept must precede bridge isolation" >&2
+  exit 1
+}
 nft list ruleset | grep -E 'ct mark set.*0x00001000.*dnat'
 
-# Query through the source network's gateway IP, not the target container IP.
-# Repeated attempts accommodate the HTTP server startup without hiding a timeout.
+# Use the host's non-loopback address, as on a LAN client. The bridge gateway
+# itself can follow a different host-input path and is not a reliable DNAT test.
+HOST_IP="$(ip -4 -o addr show dev eth0 | awk '{split($4, a, "/"); print a[1]; exit}')"
+[[ -n "$HOST_IP" ]] || { echo "Missing host eth0 IPv4 address" >&2; exit 1; }
+echo "Testing published host port at $HOST_IP:18081"
+podman exec nv_server wget -q -T 5 -O- http://127.0.0.1:8080/ | grep -q '^PUBLISHED_PORT_OK
+
+# Print the NAT chains so a failure can distinguish missing DNAT from isolation.
+nft list chain inet netavark PREROUTING
+nft list chain inet netavark NETAVARK-HOSTPORT-DNAT
+
 for attempt in 1 2 3 4 5; do
   if podman run --cgroups=disabled --rm --network nv_source docker.io/library/alpine:3.20 \
-      wget -q -T 5 -O- http://10.241.21.1:18081/ | grep -q '^PUBLISHED_PORT_OK$'; then
+      wget -q -T 5 -O- "http://$HOST_IP:18081/" | grep -q '^PUBLISHED_PORT_OK; then
     echo "PASS: isolated source bridge reached target published host port"
     exit 0
   fi
   sleep 2
 done
 echo "FAIL: published-port cross-bridge connection was not established" >&2
+nft -a list table inet netavark
 exit 1
