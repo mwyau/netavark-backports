@@ -1,9 +1,11 @@
 # Netavark Debian published-port backport (unofficial)
 
-Rebuilds **Debian's native Netavark source package** with the nftables parts of
+Rebuilds **Debian's native Netavark source package** with a version-specific Debian quilt backport of the nftables parts of
 [netavark PR #1483](https://github.com/containers/netavark/pull/1483).
-Source and packaging come from Debian; this repository stores only the patching
-logic, build scripts, and CI. It does **not** replace Podman or Aardvark DNS.
+Source and packaging come from Debian; this repository stores version-specific
+**unified diff quilt patches**, build scripts, tests, and CI. The build fetches
+Debian source directly; no upstream fork or source-rewriting helper is needed.
+It does **not** replace Podman or Aardvark DNS.
 
 **Experimental, not validated in a container network regression test. Do not
 install on production DNS solely because CI builds.**
@@ -29,6 +31,29 @@ Outputs follow `<Debian-version>+0xddd1~<suite>`, for example
 sort before a later Debian security revision such as `+deb13u1`. **An official
 update can replace this patch**, so monitor Debian uploads.
 
+### Patch inputs
+
+- `patches/1.14/0001-allow-published-ports-across-isolated-bridges.patch`
+- `patches/1.17/0001-allow-published-ports-across-isolated-bridges.patch`
+- `patches/2.0/0001-allow-published-ports-across-isolated-bridges.patch`
+
+The build copies the matching patch into `debian/patches`, adds it to the
+`series` file, and applies it with `quilt push`. Patch failure fails the job.
+
+### Verification
+
+All eight suite/architecture combinations build Debian packages and validate
+the resulting `.deb` metadata and packaged binary's `--version`. A separate
+privileged CI test on **Trixie amd64 and arm64** installs the generated package
+into an isolated Debian container, creates two isolated Podman bridges,
+publishes a TCP port, and attempts a connection through the host port. The
+integration job also checks for nftables DNAT and FORWARD mark rules.
+
+The Debian `dh_auto_test` step in the initial successful run invoked a Cargo
+build, **not the Rust unit-test suite**; additional unit-test coverage is still
+needed. Other Debian suites currently have package-build verification rather
+than equivalent Podman integration coverage.
+
 ### Native build
 
 In an amd64 or arm64 Linux environment with Docker:
@@ -45,13 +70,18 @@ Artifacts appear under `dist/<suite>/<arch>/` with `.deb`, `.dsc`, Debian
 source components, build records, and checksums. Building does not touch host
 networking or replace installed packages.
 
-### Release policy
+### CI artifacts and draft releases
 
-This initial workflow **does not publish releases or install packages**.
-Build success is necessary but insufficient; validate patched nftables behavior
-with Podman bridges, dual-stack DNAT and isolated-network traffic before a
-production deployment. Verify native binary architecture, `lintian`, and
-rollback to Debian's original package. Deployment may require safely regenerating
+GitHub Actions artifacts are ZIP archives, even when an artifact contains a
+single `.deb`. After every successful main-branch build matrix, a separate CI
+job collects the eight `.deb` files and attaches them **directly as raw release
+assets**, plus `SHA256SUMS-release`, to a **draft prerelease**
+tagged `ci-<commit>`. A draft is not published as a final release. Its notes
+include the actual integration-job result (success or failure).
+
+No package is installed on a production system. Do not promote a draft until
+the cross-bridge regression, dual-stack checks, package policy review,
+and rollback strategy are validated. Deployment may require safely regenerating
 Netavark's existing nftables rules during a maintenance window.
 
 The `xddd` suffix is a downstream package marker; no Debian or Netavark
