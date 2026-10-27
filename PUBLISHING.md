@@ -2,7 +2,7 @@
 
 **Status: experimental. Do not publish/install until rootful Podman network regressions pass.** The GitHub Actions matrix must validate the stock distribution package, an in-place upgrade while existing containers are running, and the patched binary on fresh networks. Inspect failures instead of treating a successful package build as proof of runtime correctness.
 
-The native patched package versions currently targeted are Debian Trixie 1.14.0-2, Ubuntu Resolute (26.04 LTS) 1.16.1-3.1, and Ubuntu Stonking (26.10 interim) 1.17.2-2. The CI also covers all other standard-supported Ubuntu releases: Noble (24.04 LTS, Netavark 1.4.0-4 without the nftables driver) and Jammy (22.04 LTS, Podman 3.4/CNI and no native Netavark package). Their jobs check existing Podman networking without manufacturing or installing an incompatible backport. Standard-support Ubuntu versions are maintained separately from older Ubuntu Pro/ESM releases.
+The native patched package versions currently targeted are Debian Trixie 1.14.0-2, Ubuntu Resolute (26.04 LTS) 1.16.1-3.1, and Ubuntu Stonking (26.10 interim) 1.17.2-2. Ubuntu Noble (24.04 LTS) ships Netavark 1.4.0-4, which predates the nftables driver, so only its native Podman networking is tested. Ubuntu Jammy (22.04 LTS) is explicitly excluded from this downstream packaging/testing project. Older Ubuntu Pro/ESM releases are also out of scope.
 
 ## Ubuntu PPA (Launchpad)
 
@@ -50,3 +50,7 @@ Do not use `apt-key` or disable APT signature checks. Do not place the private r
 ## Rollback and release gate
 
 Never publish solely on the strength of successful compilation or static nftables-rule checks. Existing Podman networks and running containers must remain usable across an in-place package upgrade. Keep the official distribution package accessible for downgrade, and record a maintenance-window procedure for safely recreating network rules without cutting off SSH or other host access. No force-pushes and no automatic production deployment.
+
+## Upstream patch provenance
+
+Every quilt patch preserves the Netavark [PR #1483](https://github.com/containers/netavark/pull/1483) DNAT marking and FORWARD acceptance implementation and upstream comments ("Match on any rule that matches against DNAT_MASK" and "Ensure we allow the DNAT packets before we consult the isolation chains"). Netavark's API differs between 1.14 and newer releases; the patches adapt only those API forms and avoid incidental upstream refactoring. A necessary downstream addition detects an existing `NETAVARK-ISOLATION-1` jump and **inserts** the accept rule before that jump instead of appending at the end of an already initialized FORWARD chain. Without this exception, upgrades with existing bridges silently fail even though freshly-created networks may pass. Original patch origin and issue references are retained; downstream backport credited to Albert Yau <albert@xddd.org>.
