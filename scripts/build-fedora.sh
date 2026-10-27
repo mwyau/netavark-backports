@@ -2,6 +2,8 @@
 # Rebuild Fedora 43/44 native source RPM with PR #1483 only.
 set -Eeuo pipefail
 FEDORA_RELEASE="${FEDORA_RELEASE:?expected Fedora 43 or 44}"
+REVISION="${REVISION:?positive integer downstream revision required}"
+[[ "$REVISION" =~ ^[1-9][0-9]*$ ]] || { echo "Invalid downstream revision" >&2; exit 2; }
 [[ "$FEDORA_RELEASE" == 43 || "$FEDORA_RELEASE" == 44 ]] || { echo "Unsupported Fedora release" >&2; exit 2; }
 EXPECTED_ARCH="${EXPECTED_ARCH:?expected x86_64 or aarch64}"
 ARCH="$(rpm --eval '%{_arch}')"
@@ -23,11 +25,11 @@ grep -Fq '%autosetup' "$SPEC"
 cp /work/patches/1.17/0001-allow-published-ports-across-isolated-bridges.patch \
   /root/rpmbuild/SOURCES/9000-allow-cross-bridge-published-ports.patch
 sed -i '/^%description$/i Patch9000: 9000-allow-cross-bridge-published-ports.patch' "$SPEC"
-sed -i 's/^Release:[[:space:]]*%autorelease$/Release: 1.xddd1%{?dist}/' "$SPEC"
+sed -i 's/^Release:[[:space:]]*%autorelease$/Release: 1.xddd${REVISION}%{?dist}/' "$SPEC"
 dnf -y builddep "$SPEC"
 rpmbuild -ba "$SPEC" --define '_smp_mflags -j2'
 shopt -s nullglob
-RPMS=(/root/rpmbuild/RPMS/"$ARCH"/netavark-1.17.2-1.xddd1.fc${FEDORA_RELEASE}."$ARCH".rpm)
+RPMS=(/root/rpmbuild/RPMS/"$ARCH"/netavark-1.17.2-1.xddd${REVISION}.fc${FEDORA_RELEASE}."$ARCH".rpm)
 [[ "${#RPMS[@]}" == 1 ]] || {
   echo "FAIL: expected one Fedora patched RPM"; find /root/rpmbuild/RPMS -name 'netavark*.rpm'; exit 1;
 }
