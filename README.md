@@ -18,13 +18,12 @@ Release is gated on runtime regression tests, including in-place upgrades with a
 | Ubuntu resolute (26.04 LTS) | 1.16.1-3.1 | 1.16 | amd64 / arm64 | Candidate |
 | Ubuntu stonking (26.10 interim) | 1.17.2-2 | 1.17 | amd64 / arm64 | Candidate |
 | Ubuntu noble (24.04 LTS) | 1.4.0-4 | 1.4, no nftables driver | amd64 / arm64 | Stock-network compatibility tests; no PR #1483 patch |
-| Ubuntu jammy (22.04 LTS) | no native Netavark source | Podman 3.4/CNI | amd64 / arm64 | Stock-network compatibility tests; no backport |
 | Debian forky | 1.17.2-3 | 1.17 | amd64 / arm64 | Candidate |
 | Debian sid | 1.17.2-3 | 1.17 | amd64 / arm64 | Candidate |
 | Debian experimental | 2.0.0-1 | 2.0 | amd64 / arm64 | Experimental (allowed failure in CI) |
 
 The script **fails closed** if the distribution source version changes or the source
-code no longer matches the expected patch anchors. Debian Bookworm remains unsupported. All four standard-supported Ubuntu releases are included in the CI coverage matrix. Only Resolute and Stonking can directly use the nftables PR #1483 backport: Noble 1.4 predates Netavark's nftables driver, and Jammy does not package Netavark. Noble/Jammy compatibility testing is not equivalent to delivering a backport package. Ubuntu Pro/ESM releases are not included in this standard-support matrix. Experimental uses Sid as a base with Debian experimental enabled;
+code no longer matches the expected patch anchors. Debian Bookworm remains unsupported. Ubuntu 22.04 Jammy is intentionally excluded from this downstream project; current Ubuntu targets are Noble 24.04 LTS, Resolute 26.04 LTS, and Stonking 26.10. Only Resolute and Stonking can directly use the nftables PR #1483 backport: Noble 1.4 predates Netavark's nftables driver. Noble/Jammy compatibility testing is not equivalent to delivering a backport package. Ubuntu Pro/ESM releases are not included in this standard-support matrix. Experimental uses Sid as a base with Debian experimental enabled;
 **Netavark 2.x requires Podman 6.x** and is not appropriate for Podman 5.4.2.
 
 ### Versioning
@@ -52,7 +51,7 @@ exercise the stock distribution package, an **in-place upgrade with active
 containers**, and a patched install on freshly created networks. They verify
 same-bridge DNS/TCP, host port publishing, direct bridge isolation, and
 cross-isolated-bridge access to published host ports. These tests must pass before
-creating a draft release. Separate privileged stock-Podman smoke tests run on Jammy and Noble on both architectures. They never install an incompatible Netavark backport.
+creating a draft release. Separate privileged stock-Podman smoke tests run on Noble on both architectures. They never install an incompatible Netavark backport.
 
 The Debian `dh_auto_test` step in the initial successful run invoked a Cargo
 build, **not the Rust unit-test suite**; additional unit-test coverage is still
