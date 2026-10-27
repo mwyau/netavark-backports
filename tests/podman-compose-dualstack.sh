@@ -12,6 +12,12 @@ if [[ -f /etc/fedora-release ]]; then
   ARCH="$(rpm --eval '%{_arch}')"
   dnf -y install podman podman-compose netavark aardvark-dns \
     crun curl jq nftables iproute
+elif grep -Eq '^ID="?opensuse-leap"?' /etc/os-release; then
+  DISTRO=opensuse
+  ARCH="$(rpm --eval '%{_arch}')"
+  zypper --non-interactive --gpg-auto-import-keys refresh
+  zypper --non-interactive install --no-recommends \
+    podman podman-compose netavark aardvark-dns runc curl jq nftables iproute2
 else
   DISTRO=deb
   ARCH="$(dpkg --print-architecture)"
@@ -26,22 +32,40 @@ driver = "vfs"
 runroot = "/run/containers/storage"
 graphroot = "/var/lib/containers/storage"
 EOF
-cat >/etc/containers/containers.conf <<'EOF'
+if [[ "$DISTRO" == opensuse ]]; then
+  cat >/etc/containers/containers.conf <<'EOF'
+[containers]
+cgroups = "enabled"
+[engine]
+runtime = "runc"
+cgroup_manager = "cgroupfs"
+compose_providers = ["/usr/bin/podman-compose"]
+EOF
+else
+  cat >/etc/containers/containers.conf <<'EOF'
 [containers]
 cgroups = "disabled"
 [engine]
 runtime = "crun"
 compose_providers = ["/usr/bin/podman-compose"]
 EOF
+fi
 cat /etc/os-release
-if [[ "$DISTRO" == fedora ]]; then rpm -q podman netavark podman-compose; else dpkg-query -W podman netavark podman-compose; fi
+if [[ "$DISTRO" == fedora || "$DISTRO" == opensuse ]]; then rpm -q podman netavark podman-compose; else dpkg-query -W podman netavark podman-compose; fi
 podman info --format '{{.Host.NetworkBackend}}' | grep -Fx netavark
 podman compose version
 shopt -s nullglob
-if [[ "$DISTRO" == fedora ]]; then
-  RPMS=(/packages/netavark-1.17.2-*.xddd"${REVISION:?CI revision required}".fc"$FEDORA_RELEASE"."$ARCH".rpm)
+if [[ "$DISTRO" == fedora || "$DISTRO" == opensuse ]]; then
+  RPMS=(/packages/netavark-[0-9]*.xddd"${REVISION:?CI revision required}"*."$ARCH".rpm)
   [[ "${#RPMS[@]}" == 1 ]] || { echo "FAIL: missing patched Fedora $FEDORA_RELEASE RPM" >&2; exit 1; }
-  install_candidate() { dnf -y install "${RPMS[0]}"; rpm -q netavark; }
+  install_candidate() {
+    if [[ "$DISTRO" == fedora ]]; then
+      dnf -y install "${RPMS[0]}"
+    else
+      zypper --non-interactive install --allow-unsigned-rpm "${RPMS[0]}"
+    fi
+    rpm -q netavark
+  }
 else
   DEBS=(/packages/netavark_*_"$ARCH".deb)
   [[ "${#DEBS[@]}" == 1 ]] || { echo "FAIL: missing patched Debian/Ubuntu .deb" >&2; exit 1; }
