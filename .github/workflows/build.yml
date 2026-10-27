@@ -43,6 +43,7 @@ jobs:
       - name: Validate build scripts
         run: |
           bash -n scripts/build.sh
+          bash -n scripts/build-fedora44.sh
           bash -n tests/published-port-integration.sh
           bash -n tests/ubuntu-compatibility.sh
           bash -n tests/native-distro-network.sh
@@ -170,6 +171,77 @@ jobs:
               "$image" bash /tests/podman-compose-dualstack.sh
           done
 
+  fedora44-build:
+    name: Fedora 44 patched SRPM / ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {arch: x86_64, runner: ubuntu-24.04}
+          - {arch: aarch64, runner: ubuntu-24.04-arm}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Rebuild official Fedora 44 SRPM with upstream PR 1483
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n scripts/build-fedora44.sh
+          docker run --rm --pull=always \
+            -v "$GITHUB_WORKSPACE:/work" -w /work \
+            -e EXPECTED_ARCH="${{ matrix.arch }}" \
+            fedora:44 bash scripts/build-fedora44.sh
+      - uses: actions/upload-artifact@v7
+        with:
+          name: netavark-fedora44-${{ matrix.arch }}
+          path: dist/fedora44/${{ matrix.arch }}/*
+          if-no-files-found: error
+          retention-days: 14
+
+  fedora44-compose:
+    name: Fedora 44 Compose dual-stack A/B / ${{ matrix.arch }}
+    needs: [fedora44-build]
+    if: always()
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      actions: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {arch: x86_64, runner: ubuntu-24.04}
+          - {arch: aarch64, runner: ubuntu-24.04-arm}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Download official-source patched Fedora RPM
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh run download "$GITHUB_RUN_ID" \
+            --repo "$GITHUB_REPOSITORY" \
+            --name "netavark-fedora44-${{ matrix.arch }}" \
+            --dir packages
+      - name: Require stock failure then patched success over IPv4 and IPv6
+        shell: bash
+        run: |
+          set -euo pipefail
+          for mode in fresh upgrade; do
+            docker run --rm --pull=always \
+              --privileged --security-opt seccomp=unconfined \
+              -e NETAVARK_COMPOSE_MODE="$mode" \
+              -v "$GITHUB_WORKSPACE/packages:/packages:ro" \
+              -v "$GITHUB_WORKSPACE/tests:/tests:ro" \
+              fedora:44 bash /tests/podman-compose-dualstack.sh
+          done
+
   ubuntu-compat:
     name: Ubuntu stock networking / ${{ matrix.suite }} / ${{ matrix.arch }}
     runs-on: ${{ matrix.runner }}
@@ -225,8 +297,8 @@ jobs:
 
   draft-release:
     name: Attach .deb files to draft GitHub Release
-    needs: [build, integration, compose-dualstack, ubuntu-compat]
-    if: always() && needs.build.result == 'success' && needs.integration.result == 'success' && needs.compose-dualstack.result == 'success' && needs.ubuntu-compat.result == 'success' && github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: [build, integration, compose-dualstack, fedora44-build, fedora44-compose, ubuntu-compat]
+    if: always() && needs.build.result == 'success' && needs.integration.result == 'success' && needs.compose-dualstack.result == 'success' && needs.fedora44-build.result == 'success' && needs.fedora44-compose.result == 'success' && needs.ubuntu-compat.result == 'success' && github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     permissions:
       contents: write
