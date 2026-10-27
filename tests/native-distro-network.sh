@@ -1,25 +1,37 @@
 #!/usr/bin/env bash
 # Native-package network regression for Arch and openSUSE. No custom packages.
-# Platform provided via TEST_PLATFORM=arch|tumbleweed|leap16
+# Platform provided via TEST_PLATFORM=arch|tumbleweed|leap16|fedora44
 set -Eeuo pipefail
 export NETAVARK_FW=nftables
-platform="${TEST_PLATFORM:?Set arch, tumbleweed or leap16}"
+platform="${TEST_PLATFORM:?Set arch, tumbleweed, leap16, or fedora44}"
 case "$platform" in
   arch)
     pacman -Syu --noconfirm --needed podman netavark aardvark-dns nftables iproute2 curl jq crun
     ;;
-  tumbleweed|leap16)
+  tumbleweed)
     zypper --non-interactive --gpg-auto-import-keys refresh
     zypper --non-interactive install --no-recommends \
       podman netavark aardvark-dns nftables iproute2 curl jq crun
+    ;;
+  leap16)
+    # Leap 16.0 repositories do not provide crun; use the native runc package.
+    zypper --non-interactive --gpg-auto-import-keys refresh
+    zypper --non-interactive install --no-recommends \
+      podman netavark aardvark-dns nftables iproute2 curl jq runc
+    ;;
+  fedora44)
+    dnf -y --setopt=install_weak_deps=False install \
+      podman netavark aardvark-dns nftables iproute curl jq crun
     ;;
   *) echo "Unknown test platform: $platform" >&2; exit 2 ;;
 esac
 cat /etc/os-release
 echo "Native Netavark:"
-netavark_bin="$(find /usr -type f -name netavark -perm /111 -print -quit 2>/dev/null)"
+netavark_bin="$(find /usr/libexec/podman /usr/lib/podman /usr/bin -maxdepth 2 -type f -name netavark -perm /111 -print -quit 2>/dev/null || true)"
 [[ -n "$netavark_bin" ]] || { echo "FAIL: Netavark executable missing after installation" >&2; exit 1; }
-"$netavark_bin" --version
+printf 'Netavark executable: %s\n' "$netavark_bin"
+ls -l "$netavark_bin"
+"$netavark_bin" --version || { ldd "$netavark_bin" || :; exit 1; }
 mkdir -p /etc/containers
 cat >/etc/containers/storage.conf <<'EOF'
 [storage]
@@ -27,8 +39,19 @@ driver = "vfs"
 runroot = "/run/containers/storage"
 graphroot = "/var/lib/containers/storage"
 EOF
-# Initialize Podman only after setting the storage driver, avoiding persistent
-# graph-driver mismatches on distributions that initialize their database early.
+# Explicitly force the nested container storage configuration: some native
+# package defaults otherwise select overlay inside the outer Docker overlayfs.
+export CONTAINERS_STORAGE_CONF=/etc/containers/storage.conf
+PODMAN_GLOBAL=(--storage-driver=vfs)
+RUNTIME=crun
+CGROUPS=disabled
+if [[ "$platform" == leap16 ]]; then
+  PODMAN_GLOBAL+=(--cgroup-manager=cgroupfs)
+  RUNTIME=runc
+  CGROUPS=enabled
+fi
+podman() { command podman "${PODMAN_GLOBAL[@]}" "$@"; }
+# Initialize only after selecting vfs so libpod cannot record overlay.
 podman info --format '{{.Host.NetworkBackend}}' | grep -Fx netavark
 cleanup() {
   podman rm -f nv_native_server >/dev/null 2>&1 || :
@@ -44,7 +67,7 @@ trap 'rc=$?; (( rc == 0 )) || diagnostics' ERR
 
 podman network create --subnet 10.242.31.0/24 --opt isolate=true nv_native_source
 podman network create --subnet 10.242.32.0/24 --opt isolate=true nv_native_target
-podman run --runtime crun --cgroups=disabled -d --name nv_native_server --network nv_native_target \
+podman run --runtime "$RUNTIME" --cgroups="$CGROUPS" -d --name nv_native_server --network nv_native_target \
   -p 0.0.0.0:18091:8080 docker.io/library/python:3.12-alpine \
   sh -c 'set -eu; mkdir -p /www; echo NATIVE_PORT_OK >/www/index.html; exec python3 -m http.server 8080 --bind 0.0.0.0 --directory /www'
 
@@ -62,7 +85,7 @@ done
 echo "PASS: HTTP service ready"
 
 client_get() {
-  podman run --runtime crun --cgroups=disabled --rm --network "$1" \
+  podman run --runtime "$RUNTIME" --cgroups="$CGROUPS" --rm --network "$1" \
     docker.io/library/alpine:3.20 wget -q -T 5 -O- "$2"
 }
 client_get nv_native_target http://nv_native_server:8080/ | grep -qx NATIVE_PORT_OK || {
@@ -85,8 +108,15 @@ if client_get nv_native_source "http://$SERVER_IP:8080/" | grep -qx NATIVE_PORT_
 fi
 echo "PASS: direct bridge isolation"
 
-if [[ "$platform" == leap16 ]]; then
-  echo "SKIP: expected pre-2.1 Leap 16.0 published-port defect; patched RPM requires separate OBS build"
+if [[ "$platform" == leap16 || "$platform" == fedora44 ]]; then
+  # Both ship pre-PR1483 Netavark. Confirm the stock bug rather than claiming
+  # success when no candidate RPM has been installed.
+  if client_get nv_native_source "http://$HOST_IP:18091/" | grep -qx NATIVE_PORT_OK; then
+    echo "FAIL: expected stock $platform IPv4 published-port isolation defect not reproduced" >&2
+    exit 1
+  fi
+  echo "PASS: stock $platform reproduces IPv4 cross-bridge published-port denial"
+  echo "NOTE: Fedora/Leap candidate RPM must be built and tested separately"
   exit 0
 fi
 success=false
