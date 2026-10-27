@@ -46,6 +46,7 @@ jobs:
           bash -n tests/published-port-integration.sh
           bash -n tests/ubuntu-compatibility.sh
           bash -n tests/native-distro-network.sh
+          bash -n tests/podman-compose-dualstack.sh
           test -f patches/1.14/0001-allow-published-ports-across-isolated-bridges.patch
           test -f patches/1.16/0001-allow-published-ports-across-isolated-bridges.patch
           test -f patches/1.17/0001-allow-published-ports-across-isolated-bridges.patch
@@ -118,6 +119,53 @@ jobs:
               "$image" bash /tests/published-port-integration.sh
           done
 
+  compose-dualstack:
+    name: Compose two-service IPv4/IPv6 / ${{ matrix.suite }} / ${{ matrix.arch }}
+    needs: [build]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 55
+    permissions:
+      contents: read
+      actions: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {suite: trixie, arch: amd64, runner: ubuntu-24.04}
+          - {suite: trixie, arch: arm64, runner: ubuntu-24.04-arm}
+          - {suite: resolute, arch: amd64, runner: ubuntu-26.04}
+          - {suite: resolute, arch: arm64, runner: ubuntu-26.04-arm}
+          - {suite: stonking, arch: amd64, runner: ubuntu-26.04}
+          - {suite: stonking, arch: arm64, runner: ubuntu-26.04-arm}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Download exact source-built package
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh run download "$GITHUB_RUN_ID" \
+            --repo "$GITHUB_REPOSITORY" \
+            --name "netavark-${{ matrix.suite }}-${{ matrix.arch }}" \
+            --dir packages
+      - name: Two Compose services on isolated dual-stack bridges
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n tests/podman-compose-dualstack.sh
+          image="${{ (matrix.suite == 'resolute' || matrix.suite == 'stonking') && format('ubuntu:{0}', matrix.suite) || 'debian:trixie' }}"
+          for mode in fresh upgrade; do
+            docker run --rm --pull=always \
+              --privileged --security-opt seccomp=unconfined \
+              -e NETAVARK_COMPOSE_MODE="$mode" \
+              -v "$GITHUB_WORKSPACE/packages:/packages:ro" \
+              -v "$GITHUB_WORKSPACE/tests:/tests:ro" \
+              "$image" bash /tests/podman-compose-dualstack.sh
+          done
+
   ubuntu-compat:
     name: Ubuntu stock networking / ${{ matrix.suite }} / ${{ matrix.arch }}
     runs-on: ${{ matrix.runner }}
@@ -172,8 +220,8 @@ jobs:
 
   draft-release:
     name: Attach .deb files to draft GitHub Release
-    needs: [build, integration, ubuntu-compat]
-    if: always() && needs.build.result == 'success' && needs.integration.result == 'success' && needs.ubuntu-compat.result == 'success' && github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: [build, integration, compose-dualstack, ubuntu-compat]
+    if: always() && needs.build.result == 'success' && needs.integration.result == 'success' && needs.compose-dualstack.result == 'success' && needs.ubuntu-compat.result == 'success' && github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -217,7 +265,7 @@ jobs:
             --draft \
             --prerelease \
             --title "CI packages ${short} (experimental; review before deployment)" \
-            --notes "Unofficial Ubuntu/Debian Netavark backport. All twelve packages built. Baseline, in-place upgrade, and patched regression jobs passed for Debian Trixie, Ubuntu Resolute and Stonking (amd64/arm64), plus stock Jammy/Noble compatibility checks. Draft / unreviewed: inspect test coverage and rollback plan before deployment."
+            --notes "Unofficial Ubuntu/Debian Netavark backport. All twelve packages built. Baseline, in-place upgrade, and patched regression jobs passed for Debian Trixie, Ubuntu Resolute and Stonking (amd64/arm64), plus dual-stack Podman Compose checks and stock Noble compatibility checks. Draft / unreviewed: inspect test coverage and rollback plan before deployment."
           gh release upload "$tag" packages/netavark_*_amd64.deb packages/netavark_*_arm64.deb packages/SHA256SUMS-release \
             --repo "$GITHUB_REPOSITORY"
           gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json url,isDraft,assets
