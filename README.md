@@ -23,7 +23,7 @@ Release is gated on runtime regression tests, including in-place upgrades with a
 | Debian experimental | 2.0.0-1 | 2.0 | amd64 / arm64 | Experimental (allowed failure in CI) |
 
 The script **fails closed** if the distribution source version changes or the source
-code no longer matches the expected patch anchors. Debian Bookworm remains unsupported. Ubuntu 22.04 Jammy is intentionally excluded from this downstream project; current Ubuntu targets are Noble 24.04 LTS, Resolute 26.04 LTS, and Stonking 26.10. Only Resolute and Stonking can directly use the nftables PR #1483 backport: Noble 1.4 predates Netavark's nftables driver. Noble/Jammy compatibility testing is not equivalent to delivering a backport package. Ubuntu Pro/ESM releases are not included in this standard-support matrix. Experimental uses Sid as a base with Debian experimental enabled;
+code no longer matches the expected patch anchors. Debian Bookworm remains unsupported. Ubuntu 22.04 Jammy is intentionally excluded from this downstream project; current Ubuntu targets are Noble 24.04 LTS, Resolute 26.04 LTS, and Stonking 26.10. Only Resolute and Stonking can directly use the nftables PR #1483 backport: Noble 1.4 predates Netavark's nftables driver. Noble compatibility testing is not equivalent to delivering a backport package. Ubuntu Pro/ESM releases are not included in this standard-support matrix. Experimental uses Sid as a base with Debian experimental enabled;
 **Netavark 2.x requires Podman 6.x** and is not appropriate for Podman 5.4.2.
 
 ### Versioning
@@ -71,7 +71,7 @@ docker run --rm --pull=always -v "$PWD:/work" -w /work \
 `EXPECTED_ARCH` must match the actual container architecture. For x86-64, use
 `amd64`; for experimental, use `debian:sid` and `SUITE=experimental`.
 Ubuntu 26.04 and 26.10 use `ubuntu:resolute` or `ubuntu:stonking` with the
-corresponding `SUITE`. Neither Jammy nor Noble should receive these builds.
+corresponding `SUITE`. Noble should not receive these newer Netavark builds.
 Artifacts appear under `dist/<suite>/<arch>/` with `.deb`, `.dsc`, Debian/Ubuntu
 source components, build records, and checksums. Building does not touch host
 networking or replace installed packages.
@@ -84,6 +84,11 @@ job collects the twelve `.deb` files and attaches them **directly as raw release
 assets**, plus `SHA256SUMS-release`, to a **draft prerelease**
 tagged `ci-<commit>`. A draft is not published as a final release. Its notes
 are created only when all required patched and legacy compatibility checks succeed.
+
+Native Arch Linux and openSUSE Tumbleweed packages are checked by a separate
+Podman regression suite, while openSUSE Leap 16.0 receives a stock-network
+compatibility test. These checks do not produce replacement RPMs or pacman
+packages; Leap 16.0's Netavark 1.14 family requires separate RPM packaging.
 
 See [PUBLISHING.md](PUBLISHING.md) for the proposed Ubuntu PPA (`xddd` if
 available), the signed Debian APT archive at `https://apt.xddd.org`, and release
