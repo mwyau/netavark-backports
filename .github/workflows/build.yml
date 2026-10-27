@@ -1,24 +1,69 @@
-name: Ubuntu and Debian Netavark backport
+name: Netavark PR 1483 native builds and networking tests
 
 on:
+  pull_request:
   push:
     branches: [main]
-  pull_request:
   workflow_dispatch:
+    inputs:
+      revision:
+        description: Downstream integer revision (0xdddN / xdddN)
+        required: true
+        default: '1'
+        type: string
 
 permissions:
   contents: read
 
+# Never cancel an in-progress main-branch draft release.
 concurrency:
   group: netavark-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  REVISION: ${{ inputs.revision || '1' }}
 
 jobs:
-  build:
-    name: ${{ matrix.suite }} / ${{ matrix.arch }}
+  validate:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Check shell scripts and patch-family input
+        shell: bash
+        run: |
+          set -euo pipefail
+          for file in scripts/*.sh tests/*.sh; do bash -n "$file"; done
+          for version in 1.14 1.16 1.17 2.0; do
+            test -s "patches/$version/0001-allow-published-ports-across-isolated-bridges.patch"
+          done
+          test ! -e scripts/build-fedora44.sh
+
+  prepare-release:
+    needs: [validate]
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Create unreviewed draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/ci-release.sh init
+
+  deb:
+    name: deb / ${{ matrix.suite }} / ${{ matrix.arch }}
+    needs: [validate, prepare-release]
+    if: always() && needs.validate.result == 'success' && (needs.prepare-release.result == 'success' || needs.prepare-release.result == 'skipped')
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 120
+    timeout-minutes: 180
     continue-on-error: ${{ matrix.suite == 'experimental' }}
+    permissions:
+      contents: write
     strategy:
       fail-fast: false
       matrix:
@@ -36,322 +81,60 @@ jobs:
           - {suite: experimental, arch: amd64, runner: ubuntu-24.04}
           - {suite: experimental, arch: arm64, runner: ubuntu-24.04-arm}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-      - name: Validate build scripts
-        run: |
-          bash -n scripts/build.sh
-          bash -n scripts/build-fedora.sh
-          bash -n tests/published-port-integration.sh
-          bash -n tests/ubuntu-compatibility.sh
-          bash -n tests/native-distro-network.sh
-          bash -n tests/podman-compose-dualstack.sh
-          test -f patches/1.14/0001-allow-published-ports-across-isolated-bridges.patch
-          test -f patches/1.16/0001-allow-published-ports-across-isolated-bridges.patch
-          test -f patches/1.17/0001-allow-published-ports-across-isolated-bridges.patch
-          test -f patches/2.0/0001-allow-published-ports-across-isolated-bridges.patch
-      - name: Build distribution-native source and package
-        shell: bash
-        run: |
-          set -euo pipefail
-          image="${{ (matrix.suite == 'resolute' || matrix.suite == 'stonking') && format('ubuntu:{0}', matrix.suite) || format('debian:{0}', matrix.suite == 'experimental' && 'sid' || matrix.suite) }}"
-          docker run --rm --pull=always \
-            -v "$GITHUB_WORKSPACE:/work" -w /work \
-            -e SUITE="${{ matrix.suite }}" \
-            -e EXPECTED_ARCH="${{ matrix.arch }}" \
-            -e REVISION=1 \
-            "$image" bash scripts/build.sh
-      - name: Upload package artifacts
-        uses: actions/upload-artifact@v7
-        with:
-          name: netavark-${{ matrix.suite }}-${{ matrix.arch }}
-          path: dist/${{ matrix.suite }}/${{ matrix.arch }}/*
-          if-no-files-found: error
-          retention-days: 14
-
-
-  integration:
-    name: Network regression / ${{ matrix.suite }} / ${{ matrix.arch }}
-    needs: [build]
-    # Run against each successfully built artifact, even when another distro fails.
-    # Release remains gated on every build and test job succeeding.
-    if: always()
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 30
-    permissions:
-      contents: read
-      actions: read
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - {suite: trixie, arch: amd64, runner: ubuntu-24.04}
-          - {suite: trixie, arch: arm64, runner: ubuntu-24.04-arm}
-          - {suite: resolute, arch: amd64, runner: ubuntu-26.04}
-          - {suite: resolute, arch: arm64, runner: ubuntu-26.04-arm}
-          - {suite: stonking, arch: amd64, runner: ubuntu-26.04}
-          - {suite: stonking, arch: arm64, runner: ubuntu-26.04-arm}
-    steps:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - name: Download package via GitHub CLI
-        shell: bash
+      - name: Build native deb, test Podman and dual-stack Compose
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          gh run download "$GITHUB_RUN_ID" \
-            --repo "$GITHUB_REPOSITORY" \
-            --name "netavark-${{ matrix.suite }}-${{ matrix.arch }}" \
-            --dir packages
-      - name: Baseline, in-place upgrade, and patched network regression
-        shell: bash
-        run: |
-          set -euo pipefail
-          test -f packages/netavark_*_${{ matrix.arch }}.deb
-          image="${{ (matrix.suite == 'resolute' || matrix.suite == 'stonking') && format('ubuntu:{0}', matrix.suite) || 'debian:trixie' }}"
-          for mode in baseline upgrade patched; do
-            echo "=== ${{ matrix.suite }} / ${{ matrix.arch }} / $mode ==="
-            docker run --rm --pull=always \
-              --privileged --security-opt seccomp=unconfined \
-              -e NETAVARK_TEST_MODE="$mode" \
-              -v "$GITHUB_WORKSPACE/packages:/packages:ro" \
-              -v "$GITHUB_WORKSPACE/tests:/tests:ro" \
-              "$image" bash /tests/published-port-integration.sh
-          done
+          SUITE: ${{ matrix.suite }}
+          EXPECTED_ARCH: ${{ matrix.arch }}
+        run: bash scripts/ci-deb.sh
 
-  compose-dualstack:
-    name: Compose two-service IPv4/IPv6 / ${{ matrix.suite }} / ${{ matrix.arch }}
-    needs: [build]
-    if: always()
+  rpm:
+    name: rpm / ${{ matrix.platform }} / ${{ matrix.arch }}
+    needs: [validate, prepare-release]
+    if: always() && needs.validate.result == 'success' && (needs.prepare-release.result == 'success' || needs.prepare-release.result == 'skipped')
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 55
+    timeout-minutes: 180
     permissions:
-      contents: read
-      actions: read
+      contents: write
     strategy:
       fail-fast: false
       matrix:
         include:
-          - {suite: trixie, arch: amd64, runner: ubuntu-24.04}
-          - {suite: trixie, arch: arm64, runner: ubuntu-24.04-arm}
-          - {suite: resolute, arch: amd64, runner: ubuntu-26.04}
-          - {suite: resolute, arch: arm64, runner: ubuntu-26.04-arm}
-          - {suite: stonking, arch: amd64, runner: ubuntu-26.04}
-          - {suite: stonking, arch: arm64, runner: ubuntu-26.04-arm}
+          - {platform: fedora43, image: 'fedora:43', arch: x86_64, runner: ubuntu-24.04}
+          - {platform: fedora43, image: 'fedora:43', arch: aarch64, runner: ubuntu-24.04-arm}
+          - {platform: fedora44, image: 'fedora:44', arch: x86_64, runner: ubuntu-24.04}
+          - {platform: fedora44, image: 'fedora:44', arch: aarch64, runner: ubuntu-24.04-arm}
+          - {platform: leap16, image: 'opensuse/leap:16.0', arch: x86_64, runner: ubuntu-24.04}
+          - {platform: leap16, image: 'opensuse/leap:16.0', arch: aarch64, runner: ubuntu-24.04-arm}
+          - {platform: leap161, image: 'opensuse/leap:16.1', arch: x86_64, runner: ubuntu-24.04}
+          - {platform: leap161, image: 'opensuse/leap:16.1', arch: aarch64, runner: ubuntu-24.04-arm}
     steps:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - name: Download exact source-built package
-        shell: bash
+      - name: Fedora native SRPM build and tests, or Leap stock test
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          gh run download "$GITHUB_RUN_ID" \
-            --repo "$GITHUB_REPOSITORY" \
-            --name "netavark-${{ matrix.suite }}-${{ matrix.arch }}" \
-            --dir packages
-      - name: Two Compose services on isolated dual-stack bridges
-        shell: bash
-        run: |
-          set -euo pipefail
-          bash -n tests/podman-compose-dualstack.sh
-          image="${{ (matrix.suite == 'resolute' || matrix.suite == 'stonking') && format('ubuntu:{0}', matrix.suite) || 'debian:trixie' }}"
-          for mode in fresh upgrade; do
-            docker run --rm --pull=always \
-              --privileged --security-opt seccomp=unconfined \
-              -e NETAVARK_COMPOSE_MODE="$mode" \
-              -v "$GITHUB_WORKSPACE/packages:/packages:ro" \
-              -v "$GITHUB_WORKSPACE/tests:/tests:ro" \
-              "$image" bash /tests/podman-compose-dualstack.sh
-          done
-
-  fedora-build:
-    name: Fedora ${{ matrix.release }} patched SRPM / ${{ matrix.arch }}
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 120
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - {release: 43, arch: x86_64, runner: ubuntu-24.04}
-          - {release: 43, arch: aarch64, runner: ubuntu-24.04-arm}
-          - {release: 44, arch: x86_64, runner: ubuntu-24.04}
-          - {release: 44, arch: aarch64, runner: ubuntu-24.04-arm}
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-      - name: Rebuild official Fedora ${{ matrix.release }} SRPM with upstream PR 1483
-        shell: bash
-        run: |
-          set -euo pipefail
-          bash -n scripts/build-fedora.sh
-          docker run --rm --pull=always \
-            -v "$GITHUB_WORKSPACE:/work" -w /work \
-            -e FEDORA_RELEASE="${{ matrix.release }}" \
-            -e EXPECTED_ARCH="${{ matrix.arch }}" \
-            fedora:${{ matrix.release }} bash scripts/build-fedora.sh
-      - uses: actions/upload-artifact@v7
-        with:
-          name: netavark-fedora${{ matrix.release }}-${{ matrix.arch }}
-          path: dist/fedora${{ matrix.release }}/${{ matrix.arch }}/*
-          if-no-files-found: error
-          retention-days: 14
-
-  fedora-compose:
-    name: Fedora ${{ matrix.release }} Compose dual-stack A/B / ${{ matrix.arch }}
-    needs: [fedora-build]
-    if: always()
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 60
-    permissions:
-      contents: read
-      actions: read
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - {release: 43, arch: x86_64, runner: ubuntu-24.04}
-          - {release: 43, arch: aarch64, runner: ubuntu-24.04-arm}
-          - {release: 44, arch: x86_64, runner: ubuntu-24.04}
-          - {release: 44, arch: aarch64, runner: ubuntu-24.04-arm}
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-      - name: Download official-source patched Fedora RPM
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          gh run download "$GITHUB_RUN_ID" \
-            --repo "$GITHUB_REPOSITORY" \
-            --name "netavark-fedora${{ matrix.release }}-${{ matrix.arch }}" \
-            --dir packages
-      - name: Require stock failure then patched success over IPv4 and IPv6
-        shell: bash
-        run: |
-          set -euo pipefail
-          for mode in fresh upgrade; do
-            docker run --rm --pull=always \
-              --privileged --security-opt seccomp=unconfined \
-              -e NETAVARK_COMPOSE_MODE="$mode" \
-              -v "$GITHUB_WORKSPACE/packages:/packages:ro" \
-              -v "$GITHUB_WORKSPACE/tests:/tests:ro" \
-              fedora:${{ matrix.release }} bash /tests/podman-compose-dualstack.sh
-          done
-
-  ubuntu-compat:
-    name: Ubuntu stock networking / ${{ matrix.suite }} / ${{ matrix.arch }}
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - {suite: noble, arch: amd64, runner: ubuntu-24.04}
-          - {suite: noble, arch: arm64, runner: ubuntu-24.04-arm}
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-      - name: Check stock Ubuntu Podman networking without unsupported backport
-        shell: bash
-        run: |
-          set -euo pipefail
-          bash -n tests/ubuntu-compatibility.sh
-          docker run --rm --pull=always \
-            --privileged --security-opt seccomp=unconfined \
-            -v "$GITHUB_WORKSPACE/tests:/tests:ro" \
-            "ubuntu:${{ matrix.suite }}" bash /tests/ubuntu-compatibility.sh
-
-  native-distros:
-    name: Stock Podman / ${{ matrix.platform }} / ${{ matrix.arch }}
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 35
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          # Arch and Tumbleweed already include upstream PR #1483;
-          # rolling-release native smoke tests are not release gates.
-          - {platform: leap16, arch: amd64, runner: ubuntu-24.04, image: "opensuse/leap:16.0"}
-          - {platform: leap16, arch: arm64, runner: ubuntu-24.04-arm, image: "opensuse/leap:16.0"}
-          - {platform: leap161, arch: amd64, runner: ubuntu-24.04, image: "opensuse/leap:16.1"}
-          - {platform: leap161, arch: arm64, runner: ubuntu-24.04-arm, image: "opensuse/leap:16.1"}
-          - {platform: fedora43, arch: amd64, runner: ubuntu-24.04, image: "fedora:43"}
-          - {platform: fedora43, arch: arm64, runner: ubuntu-24.04-arm, image: "fedora:43"}
-          - {platform: fedora44, arch: amd64, runner: ubuntu-24.04, image: "fedora:44"}
-          - {platform: fedora44, arch: arm64, runner: ubuntu-24.04-arm, image: "fedora:44"}
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-      - name: Native distribution baseline and published-port regression
-        shell: bash
-        run: |
-          set -euo pipefail
-          bash -n tests/native-distro-network.sh
-          docker run --rm --pull=always \
-            --privileged --security-opt seccomp=unconfined \
-            -e TEST_PLATFORM="${{ matrix.platform }}" \
-            -v "$GITHUB_WORKSPACE/tests:/tests:ro" \
-            "${{ matrix.image }}" bash /tests/native-distro-network.sh
+          RPM_PLATFORM: ${{ matrix.platform }}
+          RPM_IMAGE: ${{ matrix.image }}
+          RPM_ARCH: ${{ matrix.arch }}
+        run: bash scripts/ci-rpm.sh
 
   draft-release:
-    name: Attach .deb files to draft GitHub Release
-    needs: [build, integration, compose-dualstack, fedora-build, fedora-compose, ubuntu-compat]
-    if: always() && needs.build.result == 'success' && needs.integration.result == 'success' && needs.compose-dualstack.result == 'success' && needs.fedora-build.result == 'success' && needs.fedora-compose.result == 'success' && needs.ubuntu-compat.result == 'success' && github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    name: Verify individual raw binaries and attach checksums (draft)
+    needs: [validate, prepare-release, deb, rpm]
+    if: always() && needs.validate.result == 'success' && needs.prepare-release.result == 'success' && needs.deb.result == 'success' && needs.rpm.result == 'success'
     runs-on: ubuntu-24.04
     permissions:
       contents: write
-      actions: read
     steps:
-      - name: Collect packages from successful matrix
-        shell: bash
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Verify 14 raw binaries and attach SHA256SUMS
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          gh run download "$GITHUB_RUN_ID" \
-            --repo "$GITHUB_REPOSITORY" \
-            --pattern 'netavark-*' \
-            --dir packages
-          # gh preserves each artifact's directory; flatten only the main .deb files.
-          find packages -mindepth 2 -type f -name 'netavark_*_*.deb' \
-            -exec cp -- '{}' packages/ \;
-      - name: Verify expected package assets
-        shell: bash
-        run: |
-          set -euo pipefail
-          shopt -s nullglob
-          debs=(packages/netavark_*_amd64.deb packages/netavark_*_arm64.deb)
-          if (( ${#debs[@]} != 12 )); then
-            printf 'Expected twelve main netavark .deb files, found %s\n' "${#debs[@]}" >&2
-            exit 1
-          fi
-          sha256sum "${debs[@]}" | tee packages/SHA256SUMS-release
-      - name: Create draft release and upload raw .deb files
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          short="${GITHUB_SHA:0:12}"
-          tag="ci-${short}"
-          gh release create "$tag" \
-            --repo "$GITHUB_REPOSITORY" \
-            --target "$GITHUB_SHA" \
-            --draft \
-            --prerelease \
-            --title "CI packages ${short} (experimental; review before deployment)" \
-            --notes "Unofficial Ubuntu/Debian Netavark backport. All twelve packages built. Baseline, in-place upgrade, and patched regression jobs passed for Debian Trixie, Ubuntu Resolute and Stonking (amd64/arm64), plus dual-stack Podman Compose checks and stock Noble compatibility checks. Draft / unreviewed: inspect test coverage and rollback plan before deployment."
-          gh release upload "$tag" packages/netavark_*_amd64.deb packages/netavark_*_arm64.deb packages/SHA256SUMS-release \
-            --repo "$GITHUB_REPOSITORY"
-          gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json url,isDraft,assets
+        run: bash scripts/ci-release.sh finalize
