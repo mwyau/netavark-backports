@@ -57,6 +57,48 @@ HOST_IP="$(ip -4 -o addr show dev eth0 | awk '{split($4, a, "/"); print a[1]; ex
 [[ -n "$HOST_IP" ]] || { echo "Missing host eth0 IPv4 address" >&2; exit 1; }
 echo "Testing published host port at $HOST_IP:18081"
 podman exec nv_server wget -q -T 5 -O- http://127.0.0.1:8080/ | grep -q '^PUBLISHED_PORT_OK
+# Print the NAT chains so a failure can distinguish missing DNAT from isolation.
+nft list chain inet netavark PREROUTING
+nft list chain inet netavark NETAVARK-HOSTPORT-DNAT
+
+for attempt in 1 2 3 4 5; do
+  if podman run --cgroups=disabled --rm --network nv_source docker.io/library/alpine:3.20 \
+      wget -q -T 5 -O- "http://$HOST_IP:18081/" | grep -q '^PUBLISHED_PORT_OK
+    echo "PASS: isolated source bridge reached target published host port"
+    exit 0
+  fi
+  sleep 2
+done
+echo "FAIL: published-port cross-bridge connection was not established" >&2
+nft -a list table inet netavark
+exit 1
+
+
+# Print the NAT chains so a failure can distinguish missing DNAT from isolation.
+nft list chain inet netavark PREROUTING
+nft list chain inet netavark NETAVARK-HOSTPORT-DNAT
+
+for attempt in 1 2 3 4 5; do
+  if podman run --cgroups=disabled --rm --network nv_source docker.io/library/alpine:3.20 \
+      wget -q -T 5 -O- "http://$HOST_IP:18081/" | grep -q '^PUBLISHED_PORT_OK; then
+    echo "PASS: isolated source bridge reached target published host port"
+    exit 0
+  fi
+  sleep 2
+done
+echo "FAIL: published-port cross-bridge connection was not established" >&2
+nft -a list table inet netavark
+exit 1
+; then
+    echo "PASS: isolated source bridge reached target published host port"
+    exit 0
+  fi
+  sleep 2
+done
+echo "FAIL: published-port cross-bridge connection was not established" >&2
+nft -a list table inet netavark
+exit 1
+
 
 # Print the NAT chains so a failure can distinguish missing DNAT from isolation.
 nft list chain inet netavark PREROUTING
