@@ -2,6 +2,13 @@
 # Shared GitHub Actions orchestration. Outputs remain in the workspace.
 set -Eeuo pipefail
 
+# Downstream package version comes from a committed reviewed manifest.
+REVISION="$(cat "${GITHUB_WORKSPACE:?}/release/revision.txt")"
+[[ "$REVISION" =~ ^[1-9][0-9]*$ ]] || {
+  echo "Invalid release/revision.txt: expected positive integer" >&2; exit 2
+}
+export REVISION
+
 ci_require() {
   local key
   for key in "$@"; do

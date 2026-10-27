@@ -123,11 +123,17 @@ stays draft for manual review; no automatic public publishing occurs.
 For later multi-job downloads of uncompressed Actions artifacts, use
 `actions/download-artifact@v8`.
 
-The run number `N` is the unique downstream revision in Debian
-`+xdddN~suite`, Fedora `<native-release>.xdddN.fcXX`, and tag
-`nv1483-rN-g<first-12-SHA>`. No force-replacement of an existing release
-asset or tag. PPA source rebuild/signing and openSUSE OBS builds remain
-separate and are not represented by raw CI binary release assets.
+The downstream revision `N` is stored in committed `release/revision.txt`,
+initially `1`, **not** in the GitHub Actions run number. Debian/Ubuntu use
+`+xdddN~suite`; Fedora uses `<native-release>.xdddN.fcXX`.
+PRs and reruns reuse that revision; the Actions UI distinguishes their
+artifacts by run and commit. Increment it in a reviewed update/release PR
+only when preparing a new distribution of changed package contents.
+Use one unified release candidate tag `nv1483-rN-g<first-12-SHA>`.
+Main pushes only run CI; **manual `workflow_dispatch` from main** creates
+the unpublished draft release. Draft creation refuses reuse of an xddd
+revision already allocated to another release, even on a different commit.
+Source-package signing and openSUSE OBS packaging remain separate.
 
 See [PUBLISHING.md](PUBLISHING.md) for the proposed Ubuntu PPA (`xddd` if
 available), the signed Debian APT archive at `https://apt.xddd.org`, and release

@@ -14,10 +14,6 @@ concurrency:
   group: netavark-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
-env:
-  # Unique monotonically increasing revision for each build (including PRs).
-  REVISION: ${{ github.run_number }}
-
 jobs:
   validate:
     runs-on: ubuntu-24.04
@@ -38,7 +34,7 @@ jobs:
 
   prepare-release:
     needs: [validate]
-    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     permissions:
       contents: write

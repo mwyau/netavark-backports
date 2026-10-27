@@ -7,9 +7,12 @@ The native patched package versions currently targeted are Debian Trixie 1.14.0-
 ## CI draft GitHub Releases and tags
 
 Two matrices build and validate each candidate on the same GitHub runner.
-On protected `main` (push or manual dispatch), `scripts/ci-release.sh init`
-creates `nv1483-rN-gSHA12` as an **unpublished draft**, where `N` equals
-the GitHub Actions run number. A package uploads its own raw binary directly
+Only on manual `workflow_dispatch` from protected `main`,
+`scripts/ci-release.sh init` creates an **unpublished draft** tag
+`nv1483-rN-gSHA12`. `N` comes from committed `release/revision.txt`,
+not the workflow run number. Approval and merge run ordinary CI but
+do **not** automatically publish or create a draft release.
+A package uploads its own raw binary directly
 using `gh release upload` only when its build, ordinary networking, dual-stack
 Podman Compose fresh and before/after-upgrade tests pass. Fedora 43/44 follow
 the same gate; Leap 16.0/16.1 are stock-only tests and produce no release RPM.
@@ -26,9 +29,10 @@ and `<native RPM Release>.xdddN.fcXX` for Fedora. Official `+deb13u1`
 and newer distro-native SRPM releases are inherited rather than bypassed.
 The `+xddd` Debian suffix can outrank a later official security update
 until the backport is rebuilt; explicitly monitor distribution advisories.
-Each new source revision must pass patch and Compose regressions. The tag includes the complete revision
-and commit identity for traceability. Never use a new SHA with an existing
-package revision. To publish publicly, a human must review the candidate
+Each new source revision must pass patch and Compose regressions. The committed `release/revision.txt` starts at `1`. Bump it only in a
+reviewed update or release PR, never on a CI retry or documentation change.
+The unified tag records the revision and commit; draft creation refuses a
+revision already allocated to another release. To publish publicly, a human must review the candidate
 build logs and release notes and manually promote the draft. PRs never
 create releases.
 

@@ -5,7 +5,7 @@ set -Eeuo pipefail
 action="${1:?init, upload or finalize}"
 : "${GITHUB_SHA:?}"
 : "${GITHUB_REPOSITORY:?}"
-REVISION="${REVISION:?positive integer version required}"
+REVISION="$(cat "${GITHUB_WORKSPACE:?}/release/revision.txt")"
 [[ "$REVISION" =~ ^[1-9][0-9]*$ ]] || { echo "Invalid revision: $REVISION" >&2; exit 2; }
 [[ "${GITHUB_REF:-}" == refs/heads/main ]] || {
   echo "Refusing to write a release outside the protected main branch" >&2; exit 2;
@@ -17,6 +17,14 @@ case "$action" in
     if gh release view "$tag" --repo "$repo" >/dev/null 2>&1; then
       echo "Refusing to reuse existing tag/release $tag" >&2; exit 1
     fi
+    # Prevent publishing distinct package bytes under the same xddd revision.
+    previous="$(gh release list --repo "$repo" --limit 1000 --json tagName \
+      --jq '.[].tagName' | grep -E "^nv1483-r${REVISION}-g[0-9a-f]{12}$" || true)"
+    [[ -z "$previous" ]] || {
+      echo "xddd$REVISION already allocated: $previous" >&2
+      echo "Bump release/revision.txt in a reviewed PR before another release" >&2
+      exit 1
+    }
     gh release create "$tag" --repo "$repo" --target "$GITHUB_SHA" \
       --draft --prerelease \
       --title "Netavark PR #1483 candidate r$REVISION (${GITHUB_SHA:0:12})" \
