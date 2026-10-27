@@ -2,9 +2,13 @@ Description: Backport published port access across isolated bridges
  Preserve Netavark's DNAT destination markings so forwarded published-port
  traffic is accepted before inter-bridge isolation is enforced.
 Origin: backport, https://github.com/containers/netavark/pull/1483
+Backported-by: Albert Yau <albert@xddd.org>
+Comment: Preserve upstream match, DNAT mark, and acceptance logic as closely as
+ possible. Only adjust version-specific API and insert before an existing
+ isolation jump when upgrading live networks (upstream assumes fresh setup).
 Bug: https://github.com/containers/netavark/issues/709
 Forwarded: not-needed
-Last-Update: 2026-10-26
+Last-Update: 2026-10-27
 
 --- a/src/firewall/nft.rs
 +++ b/src/firewall/nft.rs
@@ -16,22 +20,30 @@ Last-Update: 2026-10-26
  
  /// The dnat priority for chains
  /// This (and the below) are based on https://wiki.nftables.org/wiki-nftables/index.php/Netfilter_hooks#Priority_within_hook
-@@ -239,6 +240,54 @@
+@@ -239,6 +240,62 @@
              ));
          }
  
-+        // Accept DNAT published ports before inter-bridge isolation (PR #1483).
-+        let match_dnat_mark = |r: &schema::Rule| -> bool {
++        let match_dnat_mask = |r: &schema::Rule| -> bool {
++            // Match on any rule that matches against DNAT_MASK
 +            for statement in &r.expr {
-+                if let stmt::Statement::Match(m) = statement {
-+                    if matches!(&m.right, expr::Expression::Number(n) if *n == DNAT_MASK) {
-+                        return true;
-+                    }
++                match statement {
++                    stmt::Statement::Match(m) => match &m.right {
++                        expr::Expression::Number(n) => {
++                            if *n == DNAT_MASK {
++                                return true;
++                            }
++                        }
++                        _ => continue,
++                    },
++                    _ => continue,
 +                }
 +            }
 +            false
 +        };
-+        if get_matching_rules_in_chain(&existing_rules, FORWARDCHAIN, match_dnat_mark).is_empty() {
++        if get_matching_rules_in_chain(&existing_rules, FORWARDCHAIN, match_dnat_mask).is_empty() {
++            // Ensure we allow the DNAT packets before we consult the isolation chains
++            // Forward: ct mark & 0x1000 == 0x1000 accept
 +            let mut accept_rule = make_rule(
 +                FORWARDCHAIN,
 +                vec![
@@ -71,11 +83,10 @@ Last-Update: 2026-10-26
          // Forward chain: jump NETAVARK-ISOLATION-1
          if get_matching_rules_in_chain(
              &existing_rules,
-@@ -946,6 +995,20 @@
+@@ -946,6 +1003,19 @@
              right: expr::Expression::Number(host_port),
              op: stmt::Operator::EQ,
          }));
-+        // Flag published-port DNAT to bypass bridge isolation in FORWARD.
 +        statements.push(stmt::Statement::Mangle(stmt::Mangle {
 +            key: expr::Expression::Named(expr::NamedExpression::CT(expr::CT {
 +                key: "mark".to_string(),
