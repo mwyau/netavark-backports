@@ -22,6 +22,7 @@ case "$RPM_PLATFORM" in
         -v "$out:/packages:ro" \
         -v "$GITHUB_WORKSPACE/tests:/tests:ro" \
         -e "NETAVARK_COMPOSE_MODE=$mode" \
+        -e "REVISION=$REVISION" \
         bash /tests/podman-compose-dualstack.sh
     done
     echo "PASS: Fedora $release / $RPM_ARCH patched Compose IPv4+IPv6 A/B"

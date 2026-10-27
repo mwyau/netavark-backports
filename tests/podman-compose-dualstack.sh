@@ -39,7 +39,7 @@ podman info --format '{{.Host.NetworkBackend}}' | grep -Fx netavark
 podman compose version
 shopt -s nullglob
 if [[ "$DISTRO" == fedora ]]; then
-  RPMS=(/packages/netavark-1.17.2-1.xddd1.fc"$FEDORA_RELEASE"."$ARCH".rpm)
+  RPMS=(/packages/netavark-1.17.2-*.xddd*.fc"$FEDORA_RELEASE"."$ARCH".rpm)
   [[ "${#RPMS[@]}" == 1 ]] || { echo "FAIL: missing patched Fedora $FEDORA_RELEASE RPM" >&2; exit 1; }
   install_candidate() { dnf -y install "${RPMS[0]}"; rpm -q netavark; }
 else

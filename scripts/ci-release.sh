@@ -51,7 +51,7 @@ case "$action" in
     }
     for suite in trixie resolute stonking forky sid; do
       for arch in amd64 arm64; do
-        matches=("$work"/netavark_*"+0xddd$REVISION~${suite}_$arch.deb")
+        matches=("$work"/netavark_*"+xddd$REVISION~${suite}_$arch.deb")
         [[ "${#matches[@]}" == 1 ]] || {
           echo "Missing or duplicate Debian/Ubuntu $suite/$arch candidate" >&2
           exit 1
@@ -61,8 +61,9 @@ case "$action" in
     done
     for release in 43 44; do
       for arch in x86_64 aarch64; do
-        [[ -f "$work/netavark-1.17.2-1.xddd$REVISION.fc$release.$arch.rpm" ]] || {
-          echo "Missing Fedora $release / $arch RPM" >&2; exit 1
+        matches=("$work"/netavark-1.17.2-*.xddd$REVISION.fc$release.$arch.rpm)
+        [[ "${#matches[@]}" == 1 ]] || {
+          echo "Missing/duplicate native Fedora $release / $arch RPM" >&2; exit 1;
         }
       done
     done

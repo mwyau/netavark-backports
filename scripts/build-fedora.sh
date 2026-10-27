@@ -16,6 +16,20 @@ dnf download --source netavark
 shopt -s nullglob
 SRPMS=(netavark-1.17.2-*.src.rpm)
 [[ "${#SRPMS[@]}" == 1 ]] || { echo "FAIL: missing pinned Fedora $FEDORA_RELEASE 1.17.2 SRPM"; exit 1; }
+# Preserve the exact native Fedora SRPM release (including a security
+# update), rather than resetting it to Release: 1 each CI invocation.
+NATIVE_RELEASE="$(rpm -qp --qf '%{RELEASE}' "${SRPMS[0]}")"
+NATIVE_EPOCH="$(rpm -qp --qf '%{EPOCH}' "${SRPMS[0]}")"
+NATIVE_VERSION="$(rpm -qp --qf '%{VERSION}' "${SRPMS[0]}")"
+[[ "$NATIVE_VERSION" == 1.17.2 ]] || { echo "FAIL: source version changed"; exit 1; }
+[[ "$NATIVE_RELEASE" == *".fc$FEDORA_RELEASE" ]] || {
+  echo "FAIL: unexpected Fedora native SRPM release $NATIVE_RELEASE" >&2; exit 1;
+}
+NATIVE_RELEASE_STEM="${NATIVE_RELEASE%.fc$FEDORA_RELEASE}"
+[[ "$NATIVE_RELEASE_STEM" =~ ^[0-9]+([.][0-9]+)*$ ]] || {
+  echo "FAIL: native release needs human review: $NATIVE_RELEASE" >&2; exit 1;
+}
+printf 'Native Fedora %s source: %s:%s-%s\n' "$FEDORA_RELEASE" "$NATIVE_EPOCH" "$NATIVE_VERSION" "$NATIVE_RELEASE"
 rpm -ivh --nodeps "${SRPMS[0]}"
 SPEC="$(find /root/rpmbuild/SPECS -maxdepth 1 -name netavark.spec -print -quit)"
 [[ -n "$SPEC" ]] || exit 1
@@ -25,13 +39,18 @@ grep -Fq '%autosetup' "$SPEC"
 cp /work/patches/1.17/0001-allow-published-ports-across-isolated-bridges.patch \
   /root/rpmbuild/SOURCES/9000-allow-cross-bridge-published-ports.patch
 sed -i '/^%description$/i Patch9000: 9000-allow-cross-bridge-published-ports.patch' "$SPEC"
-sed -i "s/^Release:[[:space:]]*%autorelease\$/Release: 1.xddd${REVISION}%{?dist}/" "$SPEC"
+sed -i "s/^Release:[[:space:]]*%autorelease\$/Release: ${NATIVE_RELEASE_STEM}.xddd${REVISION}%{?dist}/" "$SPEC"
 dnf -y builddep "$SPEC"
 rpmbuild -ba "$SPEC" --define '_smp_mflags -j2'
 shopt -s nullglob
-RPMS=(/root/rpmbuild/RPMS/"$ARCH"/netavark-1.17.2-1.xddd${REVISION}.fc${FEDORA_RELEASE}."$ARCH".rpm)
+RPMS=(/root/rpmbuild/RPMS/"$ARCH"/netavark-1.17.2-*.xddd${REVISION}.fc${FEDORA_RELEASE}."$ARCH".rpm)
 [[ "${#RPMS[@]}" == 1 ]] || {
   echo "FAIL: expected one Fedora patched RPM"; find /root/rpmbuild/RPMS -name 'netavark*.rpm'; exit 1;
+}
+NATIVE_BINARY="netavark-1.17.2-${NATIVE_RELEASE}"
+NEW_BINARY_RELEASE="$(rpm -qp --qf '%{RELEASE}' "${RPMS[0]}")"
+[[ "$NEW_BINARY_RELEASE" == "${NATIVE_RELEASE_STEM}.xddd${REVISION}.fc${FEDORA_RELEASE}" ]] || {
+  echo "FAIL: built release does not inherit native Fedora SRPM version" >&2; exit 1;
 }
 OUT="/work/dist/fedora${FEDORA_RELEASE}/$ARCH"
 cp "${RPMS[0]}" "$OUT/"
