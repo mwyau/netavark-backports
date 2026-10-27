@@ -45,7 +45,7 @@ The build copies the matching patch into `debian/patches`, adds it to the
 
 ### Verification
 
-All twelve package-building suite/architecture combinations build distribution-native packages and validate
+All twelve Debian/Ubuntu suite/architecture combinations build distribution-native packages and validate
 the resulting `.deb` metadata and packaged binary's `--version`. Privileged CI runtime checks on **Debian Trixie, Ubuntu Resolute and Stonking, amd64 and arm64**
 exercise the stock distribution package, an **in-place upgrade with active
 containers**, and a patched install on freshly created networks. They verify
@@ -85,19 +85,34 @@ Artifacts appear under `dist/<suite>/<arch>/` with `.deb`, `.dsc`, Debian/Ubuntu
 source components, build records, and checksums. Building does not touch host
 networking or replace installed packages.
 
-### CI artifacts and draft releases
+### Two self-contained build matrices and raw GitHub Release assets
 
-GitHub Actions artifacts are ZIP archives, even when an artifact contains a
-single `.deb`. After every successful main-branch build matrix, a separate CI
-job collects the twelve `.deb` files and attaches them **directly as raw release
-assets**, plus `SHA256SUMS-release`, to a **draft prerelease**
-tagged `ci-<commit>`. A draft is not published as a final release. Its notes
-are created only when all required patched and legacy compatibility checks succeed.
+`.github/workflows/build.yml` defines two candidate matrices: `deb`
+(Debian Trixie, Forky, Sid; Ubuntu Resolute and Stonking; optional experimental
+build-only), and `rpm` (Fedora 43/44 RPM build+test; Leap 16.0/16.1 stock-only
+network regression). Both arches run independently. Each eligible candidate job
+builds a **distribution-native** package and runs its own network regression
+before making a release upload. `scripts/ci-common.sh`, `ci-deb.sh`,
+`ci-rpm.sh`, and `ci-release.sh` implement the workflow; the YAML contains
+only matrix entries, permissions, gates and script invocation.
 
-Native Arch Linux and openSUSE Tumbleweed packages are checked by a separate
-Podman regression suite, while openSUSE Leap 16.0 receives a stock-network
-compatibility test. These checks do not produce replacement RPMs or pacman
-packages; Leap 16.0's Netavark 1.14 family requires separate RPM packaging.
+After a protected-main push, CI creates an **unpublished draft prerelease**.
+Each eligible job uploads its **single raw .deb or .rpm directly** with
+`gh release upload` only after the job's networking tests pass. No
+`actions/upload-artifact` or per-package ZIP artifacts are used. The final
+job verifies the set of **10 .deb and 4 Fedora .rpm** binaries and attaches
+`SHA256SUMS`; a human still has to inspect and manually publish the draft.
+Pull requests do not create or upload release binaries, because GitHub tokens
+for untrusted PRs must not have release-publishing privileges.
+
+The CI run number `N` is the monotonically increasing downstream revision:
+Debian/Ubuntu `<base>+0xdddN~<suite>`, Fedora
+`netavark-1.17.2-1.xdddN.fc43|fc44.<arch>.rpm`, and immutable Git tag
+`nv1483-rN-g<first-12-commit-hash>`. Rerunning a release with the same
+tag fails rather than overwriting existing binary assets. Source packages for
+Ubuntu PPA and a future openSUSE OBS RPM build remain separate manual steps.
+Experimental Netavark 2.x is not a release asset; Leap passes only a stock
+compatibility test, not a patched RPM candidate.
 
 See [PUBLISHING.md](PUBLISHING.md) for the proposed Ubuntu PPA (`xddd` if
 available), the signed Debian APT archive at `https://apt.xddd.org`, and release
