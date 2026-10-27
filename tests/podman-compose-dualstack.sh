@@ -5,10 +5,18 @@ export DEBIAN_FRONTEND=noninteractive NETAVARK_FW=nftables
 export PODMAN_COMPOSE_PROVIDER=/usr/bin/podman-compose
 MODE="${NETAVARK_COMPOSE_MODE:-fresh}"
 [[ "$MODE" == fresh || "$MODE" == upgrade ]] || exit 2
-ARCH="$(dpkg --print-architecture)"
-apt-get update
-apt-get install -y --no-install-recommends podman podman-compose netavark \
-  aardvark-dns crun curl jq nftables iproute2 ca-certificates
+if [[ -f /etc/fedora-release ]]; then
+  DISTRO=fedora44
+  ARCH="$(rpm --eval '%{_arch}')"
+  dnf -y install podman podman-compose netavark aardvark-dns \
+    crun curl jq nftables iproute
+else
+  DISTRO=deb
+  ARCH="$(dpkg --print-architecture)"
+  apt-get update
+  apt-get install -y --no-install-recommends podman podman-compose netavark \
+    aardvark-dns crun curl jq nftables iproute2 ca-certificates
+fi
 mkdir -p /etc/containers
 cat >/etc/containers/storage.conf <<'EOF'
 [storage]
@@ -24,13 +32,19 @@ runtime = "crun"
 compose_providers = ["/usr/bin/podman-compose"]
 EOF
 cat /etc/os-release
-dpkg-query -W podman netavark podman-compose
+if [[ "$DISTRO" == fedora44 ]]; then rpm -q podman netavark podman-compose; else dpkg-query -W podman netavark podman-compose; fi
 podman info --format '{{.Host.NetworkBackend}}' | grep -Fx netavark
 podman compose version
 shopt -s nullglob
-DEBS=(/packages/netavark_*_"$ARCH".deb)
-[[ "${#DEBS[@]}" == 1 ]] || { echo "FAIL: exactly one patched .deb required" >&2; exit 1; }
-install_candidate() { apt-get install -y "${DEBS[0]}"; dpkg-query -W netavark; }
+if [[ "$DISTRO" == fedora44 ]]; then
+  RPMS=(/packages/netavark-1.17.2-1.xddd1.fc44."$ARCH".rpm)
+  [[ "${#RPMS[@]}" == 1 ]] || { echo "FAIL: missing patched Fedora 44 RPM" >&2; exit 1; }
+  install_candidate() { dnf -y install "${RPMS[0]}"; rpm -q netavark; }
+else
+  DEBS=(/packages/netavark_*_"$ARCH".deb)
+  [[ "${#DEBS[@]}" == 1 ]] || { echo "FAIL: missing patched Debian/Ubuntu .deb" >&2; exit 1; }
+  install_candidate() { apt-get install -y "${DEBS[0]}"; dpkg-query -W netavark; }
+fi
 if [[ "$MODE" == fresh ]]; then install_candidate; fi
 
 # Compose operates both services; explicitly provision isolate=true networks to
