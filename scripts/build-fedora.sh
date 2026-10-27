@@ -25,7 +25,7 @@ grep -Fq '%autosetup' "$SPEC"
 cp /work/patches/1.17/0001-allow-published-ports-across-isolated-bridges.patch \
   /root/rpmbuild/SOURCES/9000-allow-cross-bridge-published-ports.patch
 sed -i '/^%description$/i Patch9000: 9000-allow-cross-bridge-published-ports.patch' "$SPEC"
-sed -i 's/^Release:[[:space:]]*%autorelease$/Release: 1.xddd${REVISION}%{?dist}/' "$SPEC"
+sed -i "s/^Release:[[:space:]]*%autorelease\$/Release: 1.xddd${REVISION}%{?dist}/" "$SPEC"
 dnf -y builddep "$SPEC"
 rpmbuild -ba "$SPEC" --define '_smp_mflags -j2'
 shopt -s nullglob
