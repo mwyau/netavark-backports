@@ -17,7 +17,17 @@ trap 'rm -rf "$work"' EXIT
 shopt -s nullglob
 
 # Keep only the tested main binary RPMs, not debug or source RPMs.
-mapfile -d '' binaries < <(find "$incoming" -type f \( -name 'netavark_*_amd64.deb' -o -name 'netavark_*_arm64.deb' -o -name 'netavark-[0-9]*.x86_64.rpm' -o -name 'netavark-[0-9]*.aarch64.rpm' \) -print0)
+# Exclude Debian experimental and experimental Leap binaries from the release.
+mapfile -d '' binaries < <(
+  find "$incoming" -type f \
+    \( \( -name 'netavark_*_amd64.deb' -o -name 'netavark_*_arm64.deb' \) \
+       ! -name '*~experimental_*' \
+       -o -name 'netavark-1.17.2-*.fc43.x86_64.rpm' \
+       -o -name 'netavark-1.17.2-*.fc43.aarch64.rpm' \
+       -o -name 'netavark-1.17.2-*.fc44.x86_64.rpm' \
+       -o -name 'netavark-1.17.2-*.fc44.aarch64.rpm' \) \
+    -print0
+)
 [[ "${#binaries[@]}" == 14 ]] || {
   echo "Expected 14 tested DEB/Fedora RPM binaries, found ${#binaries[@]}" >&2; exit 1;
 }

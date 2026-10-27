@@ -42,7 +42,7 @@ awk '
   END {if (!done) exit 1}
 ' "$spec" > "$spec.new"
 mv "$spec.new" "$spec"
-sed -i "0,/^Release:[[:space:]]*/s/^Release:[[:space:]]*.*/Release: ${native_release\}.xddd${REVISION\}/" "$spec"
+sed -i "0,/^Release:[[:space:]]*/s/^Release:[[:space:]]*.*/Release: ${native_release}.xddd${REVISION}/" "$spec"
 zypper --non-interactive source-install -d netavark
 rpmbuild -ba "$spec" --define "_topdir $top" --define '_smp_mflags -j2'
 out="/work/dist/$PLATFORM/$ARCH"
