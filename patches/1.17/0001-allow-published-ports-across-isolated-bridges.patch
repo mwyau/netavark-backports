@@ -1,12 +1,7 @@
-Description: Backport published port access across isolated bridges
- Preserve Netavark's DNAT destination markings so forwarded published-port
- traffic is accepted before inter-bridge isolation is enforced.
+Description: Allow published ports to be reached across isolated bridges
+Bug: https://github.com/containers/netavark/issues/709
 Origin: backport, https://github.com/containers/netavark/pull/1483
 Backported-by: Albert Yau <albert@xddd.org>
-Comment: Preserve upstream match, DNAT mark, and acceptance logic as closely as
- possible. Only adjust version-specific API and insert before an existing
- isolation jump when upgrading live networks (upstream assumes fresh setup).
-Bug: https://github.com/containers/netavark/issues/709
 Forwarded: not-needed
 Last-Update: 2026-10-27
 
@@ -21,7 +16,7 @@ Last-Update: 2026-10-27
  
  /// The dnat priority for chains
  /// This (and the below) are based on https://wiki.nftables.org/wiki-nftables/index.php/Netfilter_hooks#Priority_within_hook
-@@ -247,6 +249,64 @@
+@@ -247,6 +249,62 @@
              ));
          }
  
@@ -65,7 +60,6 @@ Last-Update: 2026-10-27
 +                    stmt::Statement::Accept(None),
 +                ]),
 +            );
-+            // On an existing network, add before its isolation jump (not at chain tail).
 +            let isolation_handle = get_matching_rules_in_chain(
 +                &existing_rules,
 +                FORWARDCHAIN,
@@ -79,14 +73,13 @@ Last-Update: 2026-10-27
 +                }
 +                batch.add_cmd(schema::NfCmd::Insert(accept_rule));
 +            } else {
-+                // For a new network, the isolation jump is added below this rule.
 +                batch.add(accept_rule);
 +            }
 +        }
          // Forward chain: jump NETAVARK-ISOLATION-1
          if get_matching_rules_in_chain(
              &existing_rules,
-@@ -961,6 +1021,19 @@
+@@ -961,6 +1019,19 @@
              right: expr::Expression::Number(host_port),
              op: stmt::Operator::EQ,
          }));
