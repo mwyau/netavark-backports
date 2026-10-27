@@ -22,9 +22,9 @@ zypper --non-interactive source-install -D netavark
 top="$(rpm --eval '%{_topdir}')"
 spec="$top/SPECS/netavark.spec"
 [[ -s "$spec" ]] || { echo "Missing Leap netavark SPEC: $spec" >&2; exit 1; }
-source_version="$(rpm -q --specfile --qf '%{VERSION}\n' "$spec" | head -n1)"
+source_version="$(rpm -q --define 'default_firewall_backend nftables' --specfile --qf '%{VERSION}\n' "$spec" | head -n1)"
 python3 /work/scripts/check-source-lock.py opensuse "$LEAP_VERSION" "$source_version"
-native_release="$(rpm -q --specfile --qf '%{RELEASE}\n' "$spec" | head -n1)"
+native_release="$(rpm -q --define 'default_firewall_backend nftables' --specfile --qf '%{RELEASE}\n' "$spec" | head -n1)"
 [[ -n "$native_release" && "$native_release" != "(none)" ]] || exit 1
 grep -Eq '^%autosetup|^%autopatch' "$spec" || {
   echo "Unknown native SPEC patch application; needs review" >&2; exit 1;
@@ -44,7 +44,7 @@ awk '
 mv "$spec.new" "$spec"
 sed -i "0,/^Release:[[:space:]]*/s/^Release:[[:space:]]*.*/Release: ${native_release}.xddd${REVISION}/" "$spec"
 zypper --non-interactive source-install -d netavark
-rpmbuild -ba "$spec" --define "_topdir $top" --define '_smp_mflags -j2'
+rpmbuild -ba "$spec" --define "_topdir $top" --define '_smp_mflags -j2' --define 'default_firewall_backend nftables'
 out="/work/dist/$PLATFORM/$ARCH"
 mkdir -p "$out/source"
 shopt -s nullglob
