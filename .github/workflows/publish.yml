@@ -1,0 +1,43 @@
+name: Publish approved GitHub Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing validated draft release tag
+        required: true
+        type: string
+      confirm:
+        description: Type PUBLISH to make the GitHub release public
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: netavark-publication
+  cancel-in-progress: false
+
+jobs:
+  github-release:
+    if: github.ref == 'refs/heads/main' && inputs.confirm == 'PUBLISH' && vars.PUBLISHING_ENABLED == 'true'
+    runs-on: ubuntu-24.04
+    environment:
+      name: publishing
+    permissions:
+      contents: write
+    steps:
+      - name: Check approved draft and immutable candidate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          [[ "$RELEASE_TAG" =~ ^nv1483-r[1-9][0-9]*-g[0-9a-f]{12}$ ]]
+          gh release view "$RELEASE_TAG" --repo "$GH_REPO" --json isDraft,isPrerelease,assets \
+            --jq 'select(.isDraft == true and ([.assets[].name] | index("SHA256SUMS") != null))' | grep -q .
+          gh release edit "$RELEASE_TAG" --repo "$GH_REPO" --draft=false --prerelease=false
+          echo "Published GitHub Release $RELEASE_TAG"
