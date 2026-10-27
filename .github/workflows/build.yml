@@ -27,6 +27,8 @@ jobs:
           - {suite: trixie, arch: arm64, runner: ubuntu-24.04-arm}
           - {suite: resolute, arch: amd64, runner: ubuntu-26.04}
           - {suite: resolute, arch: arm64, runner: ubuntu-26.04-arm}
+          - {suite: stonking, arch: amd64, runner: ubuntu-26.04}
+          - {suite: stonking, arch: arm64, runner: ubuntu-26.04-arm}
           - {suite: forky, arch: amd64, runner: ubuntu-24.04}
           - {suite: forky, arch: arm64, runner: ubuntu-24.04-arm}
           - {suite: sid, arch: amd64, runner: ubuntu-24.04}
@@ -42,6 +44,7 @@ jobs:
         run: |
           bash -n scripts/build.sh
           bash -n tests/published-port-integration.sh
+          bash -n tests/ubuntu-compatibility.sh
           test -f patches/1.14/0001-allow-published-ports-across-isolated-bridges.patch
           test -f patches/1.16/0001-allow-published-ports-across-isolated-bridges.patch
           test -f patches/1.17/0001-allow-published-ports-across-isolated-bridges.patch
@@ -50,7 +53,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          image="${{ matrix.suite == 'resolute' && 'ubuntu:resolute' || format('debian:{0}', matrix.suite == 'experimental' && 'sid' || matrix.suite) }}"
+          image="${{ (matrix.suite == 'resolute' || matrix.suite == 'stonking') && format('ubuntu:{0}', matrix.suite) || format('debian:{0}', matrix.suite == 'experimental' && 'sid' || matrix.suite) }}"
           docker run --rm --pull=always \
             -v "$GITHUB_WORKSPACE:/work" -w /work \
             -e SUITE="${{ matrix.suite }}" \
@@ -82,6 +85,8 @@ jobs:
           - {suite: trixie, arch: arm64, runner: ubuntu-24.04-arm}
           - {suite: resolute, arch: amd64, runner: ubuntu-26.04}
           - {suite: resolute, arch: arm64, runner: ubuntu-26.04-arm}
+          - {suite: stonking, arch: amd64, runner: ubuntu-26.04}
+          - {suite: stonking, arch: arm64, runner: ubuntu-26.04-arm}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -101,7 +106,7 @@ jobs:
         run: |
           set -euo pipefail
           test -f packages/netavark_*_${{ matrix.arch }}.deb
-          image="${{ matrix.suite == 'resolute' && 'ubuntu:resolute' || 'debian:trixie' }}"
+          image="${{ (matrix.suite == 'resolute' || matrix.suite == 'stonking') && format('ubuntu:{0}', matrix.suite) || 'debian:trixie' }}"
           for mode in baseline upgrade patched; do
             echo "=== ${{ matrix.suite }} / ${{ matrix.arch }} / $mode ==="
             docker run --rm --pull=always \
@@ -112,10 +117,36 @@ jobs:
               "$image" bash /tests/published-port-integration.sh
           done
 
+  ubuntu-compat:
+    name: Ubuntu stock networking / ${{ matrix.suite }} / ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {suite: jammy, arch: amd64, runner: ubuntu-24.04}
+          - {suite: jammy, arch: arm64, runner: ubuntu-24.04-arm}
+          - {suite: noble, arch: amd64, runner: ubuntu-24.04}
+          - {suite: noble, arch: arm64, runner: ubuntu-24.04-arm}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Check stock Ubuntu Podman networking without unsupported backport
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n tests/ubuntu-compatibility.sh
+          docker run --rm --pull=always \
+            --privileged --security-opt seccomp=unconfined \
+            -v "$GITHUB_WORKSPACE/tests:/tests:ro" \
+            "ubuntu:${{ matrix.suite }}" bash /tests/ubuntu-compatibility.sh
+
   draft-release:
     name: Attach .deb files to draft GitHub Release
-    needs: [build, integration]
-    if: always() && needs.build.result == 'success' && needs.integration.result == 'success' && github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: [build, integration, ubuntu-compat]
+    if: always() && needs.build.result == 'success' && needs.integration.result == 'success' && needs.ubuntu-compat.result == 'success' && github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -140,8 +171,8 @@ jobs:
           set -euo pipefail
           shopt -s nullglob
           debs=(packages/netavark_*_amd64.deb packages/netavark_*_arm64.deb)
-          if (( ${#debs[@]} != 10 )); then
-            printf 'Expected ten main netavark .deb files, found %s\n' "${#debs[@]}" >&2
+          if (( ${#debs[@]} != 12 )); then
+            printf 'Expected twelve main netavark .deb files, found %s\n' "${#debs[@]}" >&2
             exit 1
           fi
           sha256sum "${debs[@]}" | tee packages/SHA256SUMS-release
@@ -159,7 +190,7 @@ jobs:
             --draft \
             --prerelease \
             --title "CI packages ${short} (experimental; review before deployment)" \
-            --notes "Unofficial Ubuntu/Debian Netavark backport. All ten packages built. Baseline, in-place upgrade, and patched regression jobs passed for Debian Trixie and Ubuntu Resolute (amd64/arm64). Draft / unreviewed: inspect test coverage and rollback plan before deployment."
+            --notes "Unofficial Ubuntu/Debian Netavark backport. All twelve packages built. Baseline, in-place upgrade, and patched regression jobs passed for Debian Trixie, Ubuntu Resolute and Stonking (amd64/arm64), plus stock Jammy/Noble compatibility checks. Draft / unreviewed: inspect test coverage and rollback plan before deployment."
           gh release upload "$tag" packages/netavark_*_amd64.deb packages/netavark_*_arm64.deb packages/SHA256SUMS-release \
             --repo "$GITHUB_REPOSITORY"
           gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json url,isDraft,assets
