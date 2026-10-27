@@ -202,11 +202,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - {platform: arch, arch: amd64, runner: ubuntu-24.04, image: "archlinux:latest"}
-          - {platform: tumbleweed, arch: amd64, runner: ubuntu-24.04, image: "opensuse/tumbleweed:latest"}
-          - {platform: tumbleweed, arch: arm64, runner: ubuntu-24.04-arm, image: "opensuse/tumbleweed:latest"}
+          # Arch and Tumbleweed already include upstream PR #1483;
+          # rolling-release native smoke tests are not release gates.
           - {platform: leap16, arch: amd64, runner: ubuntu-24.04, image: "opensuse/leap:16.0"}
           - {platform: leap16, arch: arm64, runner: ubuntu-24.04-arm, image: "opensuse/leap:16.0"}
+          - {platform: fedora44, arch: amd64, runner: ubuntu-24.04, image: "fedora:44"}
+          - {platform: fedora44, arch: arm64, runner: ubuntu-24.04-arm, image: "fedora:44"}
     steps:
       - uses: actions/checkout@v7
         with:
