@@ -15,8 +15,8 @@ concurrency:
 
 jobs:
   build:
-    name: ${{ matrix.suite }} / ${{ matrix.arch }}
-    runs-on: ${{ matrix.runner }}
+    name: ${{ matrix.suite }} / ${{ matrix.arch }}}
+    runs-on: ${{ matrix.runner }}}
     timeout-minutes: 120
     continue-on-error: ${{ matrix.suite == 'experimental' }}
     strategy:
@@ -45,6 +45,7 @@ jobs:
           bash -n scripts/build.sh
           bash -n tests/published-port-integration.sh
           bash -n tests/ubuntu-compatibility.sh
+          bash -n tests/native-distro-network.sh
           test -f patches/1.14/0001-allow-published-ports-across-isolated-bridges.patch
           test -f patches/1.16/0001-allow-published-ports-across-isolated-bridges.patch
           test -f patches/1.17/0001-allow-published-ports-across-isolated-bridges.patch
@@ -57,22 +58,22 @@ jobs:
           docker run --rm --pull=always \
             -v "$GITHUB_WORKSPACE:/work" -w /work \
             -e SUITE="${{ matrix.suite }}" \
-            -e EXPECTED_ARCH="${{ matrix.arch }}" \
+            -e EXPECTED_ARCH="${{ matrix.arch }}}" \
             -e REVISION=1 \
             "$image" bash scripts/build.sh
       - name: Upload package artifacts
         uses: actions/upload-artifact@v7
         with:
-          name: netavark-${{ matrix.suite }}-${{ matrix.arch }}
-          path: dist/${{ matrix.suite }}/${{ matrix.arch }}/*
+          name: netavark-${{ matrix.suite }}-${{ matrix.arch }}}
+          path: dist/${{ matrix.suite }}/${{ matrix.arch }}}/*
           if-no-files-found: error
           retention-days: 14
 
 
   integration:
-    name: Network regression / ${{ matrix.suite }} / ${{ matrix.arch }}
+    name: Network regression / ${{ matrix.suite }} / ${{ matrix.arch }}}
     needs: [build]
-    runs-on: ${{ matrix.runner }}
+    runs-on: ${{ matrix.runner }}}
     timeout-minutes: 30
     permissions:
       contents: read
@@ -99,16 +100,16 @@ jobs:
           set -euo pipefail
           gh run download "$GITHUB_RUN_ID" \
             --repo "$GITHUB_REPOSITORY" \
-            --name "netavark-${{ matrix.suite }}-${{ matrix.arch }}" \
+            --name "netavark-${{ matrix.suite }}-${{ matrix.arch }}}" \
             --dir packages
       - name: Baseline, in-place upgrade, and patched network regression
         shell: bash
         run: |
           set -euo pipefail
-          test -f packages/netavark_*_${{ matrix.arch }}.deb
+          test -f packages/netavark_*_${{ matrix.arch }}}.deb
           image="${{ (matrix.suite == 'resolute' || matrix.suite == 'stonking') && format('ubuntu:{0}', matrix.suite) || 'debian:trixie' }}"
           for mode in baseline upgrade patched; do
-            echo "=== ${{ matrix.suite }} / ${{ matrix.arch }} / $mode ==="
+            echo "=== ${{ matrix.suite }} / ${{ matrix.arch }}} / $mode ==="
             docker run --rm --pull=always \
               --privileged --security-opt seccomp=unconfined \
               -e NETAVARK_TEST_MODE="$mode" \
@@ -118,8 +119,8 @@ jobs:
           done
 
   ubuntu-compat:
-    name: Ubuntu stock networking / ${{ matrix.suite }} / ${{ matrix.arch }}
-    runs-on: ${{ matrix.runner }}
+    name: Ubuntu stock networking / ${{ matrix.suite }} / ${{ matrix.arch }}}
+    runs-on: ${{ matrix.runner }}}
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -142,6 +143,34 @@ jobs:
             --privileged --security-opt seccomp=unconfined \
             -v "$GITHUB_WORKSPACE/tests:/tests:ro" \
             "ubuntu:${{ matrix.suite }}" bash /tests/ubuntu-compatibility.sh
+
+  native-distros:
+    name: Stock Podman / ${{ matrix.platform }} / ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {platform: arch, arch: amd64, runner: ubuntu-24.04, image: "archlinux:latest"}
+          - {platform: tumbleweed, arch: amd64, runner: ubuntu-24.04, image: "opensuse/tumbleweed:latest"}
+          - {platform: tumbleweed, arch: arm64, runner: ubuntu-24.04-arm, image: "opensuse/tumbleweed:latest"}
+          - {platform: leap16, arch: amd64, runner: ubuntu-24.04, image: "opensuse/leap:16.0"}
+          - {platform: leap16, arch: arm64, runner: ubuntu-24.04-arm, image: "opensuse/leap:16.0"}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Native distribution baseline and published-port regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n tests/native-distro-network.sh
+          docker run --rm --pull=always \
+            --privileged --security-opt seccomp=unconfined \
+            -e TEST_PLATFORM="${{ matrix.platform }}" \
+            -v "$GITHUB_WORKSPACE/tests:/tests:ro" \
+            "${{ matrix.image }}" bash /tests/native-distro-network.sh
 
   draft-release:
     name: Attach .deb files to draft GitHub Release
