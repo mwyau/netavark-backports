@@ -12,7 +12,7 @@ Release is gated on runtime regression tests, including in-place upgrades with a
 
 ## CI targets
 
-| Distribution / suite | Source revision (pinned) | Netavark family | Architectures | Status |
+| Distribution / suite | Minimum supported native source | Netavark family | Architectures | Status |
 |---|---|---|---|---|
 | Debian trixie | 1.14.0-2 | 1.14 | amd64 / arm64 | Candidate |
 | Ubuntu resolute (26.04 LTS) | 1.16.1-3.1 | 1.16 | amd64 / arm64 | Candidate |
@@ -22,8 +22,9 @@ Release is gated on runtime regression tests, including in-place upgrades with a
 | Debian sid | 1.17.2-3 | 1.17 | amd64 / arm64 | Candidate |
 | Debian experimental | 2.0.0-1 | 2.0 | amd64 / arm64 | Experimental (allowed failure in CI) |
 
-The script **fails closed** if the distribution source version changes or the source
-code no longer matches the expected patch anchors. Debian Bookworm remains unsupported. Ubuntu 22.04 Jammy is intentionally excluded from this downstream project; current Ubuntu targets are Noble 24.04 LTS, Resolute 26.04 LTS, and Stonking 26.10. Only Resolute and Stonking can directly use the nftables PR #1483 backport: Noble 1.4 predates Netavark's nftables driver. Noble compatibility testing is not equivalent to delivering a backport package. Ubuntu Pro/ESM releases are not included in this standard-support matrix. Experimental uses Sid as a base with Debian experimental enabled;
+The build selects the latest native source from configured release, security,
+and updates pockets. It **fails closed** if the source switches Netavark patch
+families, is below the minimum, or no longer matches reviewed quilt anchors. Debian Bookworm remains unsupported. Ubuntu 22.04 Jammy is intentionally excluded from this downstream project; current Ubuntu targets are Noble 24.04 LTS, Resolute 26.04 LTS, and Stonking 26.10. Only Resolute and Stonking can directly use the nftables PR #1483 backport: Noble 1.4 predates Netavark's nftables driver. Noble compatibility testing is not equivalent to delivering a backport package. Ubuntu Pro/ESM releases are not included in this standard-support matrix. Experimental uses Sid as a base with Debian experimental enabled;
 **Netavark 2.x requires Podman 6.x** and is not appropriate for Podman 5.4.2.
 
 ### Native base revisions and version ordering
