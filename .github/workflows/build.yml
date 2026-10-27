@@ -1,10 +1,9 @@
-name: Netavark PR 1483 native builds and networking tests
+name: Native Netavark builds and networking regressions
 
 on:
   pull_request:
   push:
     branches: [main]
-  workflow_dispatch:
 
 permissions:
   contents: read
@@ -32,30 +31,15 @@ jobs:
           done
           test ! -e scripts/build-fedora44.sh
 
-  prepare-release:
-    needs: [validate]
-    if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-      - name: Create unreviewed draft release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: bash scripts/ci-release.sh init
-
   deb:
     name: deb / ${{ matrix.os }}-${{ matrix.suite }} / ${{ matrix.arch }}
-    needs: [validate, prepare-release]
-    if: always() && needs.validate.result == 'success' && (needs.prepare-release.result == 'success' || needs.prepare-release.result == 'skipped')
+    needs: [validate]
+    if: needs.validate.result == 'success'
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 180
     continue-on-error: ${{ matrix.suite == 'experimental' }}
     permissions:
-      contents: write
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -81,7 +65,15 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           SUITE: ${{ matrix.suite }}
           EXPECTED_ARCH: ${{ matrix.arch }}
-        run: bash scripts/ci-deb.sh
+        run: bash scripts/ci/deb.sh
+      - name: Upload native Debian source package
+        if: success() && matrix.arch == 'amd64' && matrix.suite != 'experimental'
+        uses: actions/upload-artifact@v7
+        with:
+          name: source-deb-${{ matrix.suite }}
+          path: dist/${{ matrix.suite }}/${{ matrix.arch }}/source/*
+          if-no-files-found: error
+          retention-days: 30
       - name: Attach individual uncompressed Debian/Ubuntu package
         if: success()
         uses: actions/upload-artifact@v7
@@ -94,12 +86,12 @@ jobs:
 
   rpm:
     name: rpm / ${{ matrix.label }} / ${{ matrix.arch }}
-    needs: [validate, prepare-release]
-    if: always() && needs.validate.result == 'success' && (needs.prepare-release.result == 'success' || needs.prepare-release.result == 'skipped')
+    needs: [validate]
+    if: needs.validate.result == 'success'
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 180
     permissions:
-      contents: write
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -122,7 +114,15 @@ jobs:
           RPM_PLATFORM: ${{ matrix.platform }}
           RPM_IMAGE: ${{ matrix.image }}
           RPM_ARCH: ${{ matrix.arch }}
-        run: bash scripts/ci-rpm.sh
+        run: bash scripts/ci/rpm.sh
+      - name: Upload patched native Fedora SRPM
+        if: success() && startsWith(matrix.platform, 'fedora') && matrix.arch == 'x86_64'
+        uses: actions/upload-artifact@v7
+        with:
+          archive: false
+          path: dist/${{ matrix.platform }}/${{ matrix.arch }}/source/netavark-*.src.rpm
+          if-no-files-found: error
+          retention-days: 30
       - name: Attach individual uncompressed native Fedora RPM
         if: success() && startsWith(matrix.platform, 'fedora')
         uses: actions/upload-artifact@v7
@@ -133,9 +133,9 @@ jobs:
           retention-days: 30
 
   draft-release:
-    name: Verify individual raw binaries and attach checksums (draft)
-    needs: [validate, prepare-release, deb, rpm]
-    if: always() && needs.validate.result == 'success' && needs.prepare-release.result == 'success' && needs.deb.result == 'success' && needs.rpm.result == 'success'
+    name: Assemble validated main-branch assets into draft
+    needs: [validate, deb, rpm]
+    if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.validate.result == 'success' && needs.deb.result == 'success' && needs.rpm.result == 'success'
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -143,7 +143,12 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - name: Verify 14 raw binaries and attach SHA256SUMS
+          fetch-depth: 0
+      - name: Download binaries and source bundles from this run
+        uses: actions/download-artifact@v8
+        with:
+          path: incoming
+      - name: Validate complete candidate and create unpublished draft if new
         env:
           GH_TOKEN: ${{ github.token }}
-        run: bash scripts/ci-release.sh finalize
+        run: bash scripts/ci/release.sh create incoming
