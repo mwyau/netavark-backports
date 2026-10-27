@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Stock-Podman smoke tests for Ubuntu versions where the nftables PR #1483
+# Stock-Podman smoke test for Ubuntu Noble, where the nftables PR #1483
 # backport cannot be used directly. Do not install newer Netavark binaries.
 set -Eeuo pipefail
 export DEBIAN_FRONTEND=noninteractive
@@ -7,22 +7,15 @@ export DEBIAN_FRONTEND=noninteractive
 cat /etc/os-release
 . /etc/os-release
 case "${VERSION_CODENAME:-}" in
-  jammy|noble) ;;
+  noble) ;;
   *) echo "Unsupported stock-compatibility suite: ${VERSION_CODENAME:-unknown}" >&2; exit 2 ;;
 esac
 
 apt-get update
 apt-get install -y --no-install-recommends podman curl jq ca-certificates iproute2 iptables
-if [[ "$VERSION_CODENAME" == jammy ]]; then
-  apt-get install -y --no-install-recommends containernetworking-plugins
-else
-  apt-get install -y --no-install-recommends netavark aardvark-dns nftables
-fi
+apt-get install -y --no-install-recommends netavark aardvark-dns nftables
 echo '=== Installed networking packages ==='
 dpkg-query -W podman netavark 2>&1 || :
-echo '=== Podman backend ==='
-podman info --format '{{.Host.NetworkBackend}}'
-
 mkdir -p /etc/containers
 cat >/etc/containers/storage.conf <<'EOF'
 [storage]
@@ -30,6 +23,11 @@ driver = "vfs"
 runroot = "/run/containers/storage"
 graphroot = "/var/lib/containers/storage"
 EOF
+
+# Configure storage before any Podman command. Older Podman persists driver
+# configuration on first use; calling podman info first can poison the database.
+echo '=== Podman backend ==='
+podman info --format '{{.Host.NetworkBackend}}' | grep -Fx netavark
 
 cleanup() {
   podman rm -f nv_compat_server >/dev/null 2>&1 || true
