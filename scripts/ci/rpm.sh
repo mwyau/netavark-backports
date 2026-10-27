@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# One RPM-family build+test job per release/arch; Leap is stock-only.
+# One RPM-family build+test job per release/arch; Leap native builds are experimental.
 set -Eeuo pipefail
 source "$(dirname "$0")/common.sh"
 ci_require GITHUB_WORKSPACE RPM_PLATFORM RPM_IMAGE RPM_ARCH REVISION
@@ -29,11 +29,28 @@ case "$RPM_PLATFORM" in
     test -n "$(find "$out/source" -maxdepth 1 -name '*.src.rpm' -print -quit)"
     ;;
   leap16|leap161)
-    ci_container runtime "$RPM_IMAGE" \
-      -v "$GITHUB_WORKSPACE/tests:/tests:ro" \
-      -e "TEST_PLATFORM=$RPM_PLATFORM" \
-      bash /tests/native-distro-network.sh
-    echo "PASS: native Leap $RPM_PLATFORM stock networking (no patched RPM)"
+    case "$RPM_PLATFORM" in
+      leap16) version=16.0 ;;
+      leap161) version=16.1 ;;
+    esac
+    ci_container build "$RPM_IMAGE" \
+      -e "LEAP_VERSION=$version" -e "EXPECTED_ARCH=$RPM_ARCH" \
+      -e "REVISION=$REVISION" \
+      bash /work/scripts/build/opensuse.sh
+    out="$GITHUB_WORKSPACE/dist/$RPM_PLATFORM/$RPM_ARCH"
+    shopt -s nullglob
+    packages=("$out"/netavark-[0-9]*.rpm)
+    [[ "${#packages[@]}" == 1 ]] || {
+      echo "Expected one patched Leap RPM in $out" >&2; exit 1;
+    }
+    for mode in fresh upgrade; do
+      ci_container runtime "$RPM_IMAGE" \
+        -v "$out:/packages:ro" \
+        -v "$GITHUB_WORKSPACE/tests:/tests:ro" \
+        -e "NETAVARK_COMPOSE_MODE=$mode" -e "REVISION=$REVISION" \
+        bash /tests/podman-compose-dualstack.sh
+    done
+    echo "PASS: native Leap $version/$RPM_ARCH Compose dual-stack backport"
     ;;
   *)
     echo "Invalid RPM_PLATFORM=$RPM_PLATFORM" >&2; exit 2 ;;
