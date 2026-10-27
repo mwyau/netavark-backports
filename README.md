@@ -50,7 +50,16 @@ the resulting `.deb` metadata and packaged binary's `--version`. Privileged CI r
 exercise the stock distribution package, an **in-place upgrade with active
 containers**, and a patched install on freshly created networks. They verify
 same-bridge DNS/TCP, host port publishing, direct bridge isolation, and
-cross-isolated-bridge access to published host ports. These tests must pass before
+cross-isolated-bridge access to published host ports.
+
+**Separate real Compose tests** run two persistent `podman compose` services
+on isolated, externally provisioned dual-stack bridges. On amd64 and arm64
+Debian Trixie, Ubuntu Resolute and Stonking they check same-bridge DNS,
+IPv4/IPv6 isolation (direct access must fail), IPv4/IPv6 published-port access
+through the host gateway, fresh candidate installations, and candidate upgrades
+while the Compose project and its networks already exist. Both Compose and
+lower-level tests must pass before a draft release can be created. These
+new Compose tests are not considered validated until GitHub Actions passes. These tests must pass before
 creating a draft release. Separate privileged stock-Podman smoke tests run on Noble on both architectures. They never install an incompatible Netavark backport.
 
 The Debian `dh_auto_test` step in the initial successful run invoked a Cargo
