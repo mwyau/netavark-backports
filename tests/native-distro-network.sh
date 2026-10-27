@@ -17,7 +17,7 @@ case "$platform" in
 esac
 cat /etc/os-release
 echo "Native Netavark:"
-netavark_bin="$(find /usr/lib /usr/libexec /usr/bin -type f -name netavark -perm /111 -print -quit 2>/dev/null)"
+netavark_bin="$(find /usr -type f -name netavark -perm /111 -print -quit 2>/dev/null)"
 [[ -n "$netavark_bin" ]] || { echo "FAIL: Netavark executable missing after installation" >&2; exit 1; }
 "$netavark_bin" --version
 mkdir -p /etc/containers
