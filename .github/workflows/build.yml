@@ -24,7 +24,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for file in scripts/*.sh tests/*.sh; do bash -n "$file"; done
+          find scripts tests -type f -name '*.sh' -print0 | xargs -0 -r -n1 bash -n
+          python3 -m py_compile scripts/check-source-lock.py
+          python3 -m json.tool release/sources.lock.json >/dev/null
+          test "$(cat release/revision.txt)" -ge 1
           bash tests/debian-versioning.sh
           for version in 1.14 1.16 1.17 2.0; do
             test -s "patches/$version/0001-allow-published-ports-across-isolated-bridges.patch"
