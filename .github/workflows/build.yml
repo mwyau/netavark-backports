@@ -74,6 +74,9 @@ jobs:
   integration:
     name: Network regression / ${{ matrix.suite }} / ${{ matrix.arch }}
     needs: [build]
+    # Run against each successfully built artifact, even when another distro fails.
+    # Release remains gated on every build and test job succeeding.
+    if: always()
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     permissions:
@@ -122,6 +125,7 @@ jobs:
   compose-dualstack:
     name: Compose two-service IPv4/IPv6 / ${{ matrix.suite }} / ${{ matrix.arch }}
     needs: [build]
+    if: always()
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 55
     permissions:
