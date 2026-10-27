@@ -5,12 +5,6 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
-    inputs:
-      revision:
-        description: Downstream integer revision (0xdddN / xdddN)
-        required: true
-        default: '1'
-        type: string
 
 permissions:
   contents: read
@@ -21,7 +15,8 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
-  REVISION: ${{ inputs.revision || '1' }}
+  # Unique monotonically increasing revision for each build (including PRs).
+  REVISION: ${{ github.run_number }}
 
 jobs:
   validate:
