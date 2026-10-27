@@ -69,7 +69,8 @@ cp "/work/patches/$FAMILY/0001-allow-published-ports-across-isolated-bridges.pat
 printf '%s\n' "$PATCH_NAME" >> debian/patches/series
 quilt push "$PATCH_NAME"
 grep -Fq 'const DNAT_MASK: u32 = 0x1000;' src/firewall/nft.rs
-grep -Fq 'Mark only connections' src/firewall/nft.rs || grep -Fq 'Flag published-port DNAT' src/firewall/nft.rs
+grep -Fq 'Ensure we allow the DNAT packets before we consult the isolation chains' src/firewall/nft.rs
+grep -Fq 'let isolation_handle = get_matching_rules_in_chain(' src/firewall/nft.rs
 
 export DEBFULLNAME="Albert Yau"
 export DEBEMAIL="albert@xddd.org"
