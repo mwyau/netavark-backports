@@ -126,8 +126,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - {suite: jammy, arch: amd64, runner: ubuntu-24.04}
-          - {suite: jammy, arch: arm64, runner: ubuntu-24.04-arm}
           - {suite: noble, arch: amd64, runner: ubuntu-24.04}
           - {suite: noble, arch: arm64, runner: ubuntu-24.04-arm}
     steps:
