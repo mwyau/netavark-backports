@@ -30,6 +30,7 @@ jobs:
         run: |
           set -euo pipefail
           for file in scripts/*.sh tests/*.sh; do bash -n "$file"; done
+          bash tests/debian-versioning.sh
           for version in 1.14 1.16 1.17 2.0; do
             test -s "patches/$version/0001-allow-published-ports-across-isolated-bridges.patch"
           done
@@ -85,6 +86,15 @@ jobs:
           SUITE: ${{ matrix.suite }}
           EXPECTED_ARCH: ${{ matrix.arch }}
         run: bash scripts/ci-deb.sh
+      - name: Attach individual uncompressed Debian/Ubuntu package
+        if: success()
+        uses: actions/upload-artifact@v7
+        with:
+          # v7 archive:false stores the ORIGINAL single .deb, not a ZIP.
+          archive: false
+          path: dist/${{ matrix.suite }}/${{ matrix.arch }}/netavark_*_${{ matrix.arch }}.deb
+          if-no-files-found: error
+          retention-days: 30
 
   rpm:
     name: rpm / ${{ matrix.platform }} / ${{ matrix.arch }}
@@ -117,6 +127,14 @@ jobs:
           RPM_IMAGE: ${{ matrix.image }}
           RPM_ARCH: ${{ matrix.arch }}
         run: bash scripts/ci-rpm.sh
+      - name: Attach individual uncompressed native Fedora RPM
+        if: success() && startsWith(matrix.platform, 'fedora')
+        uses: actions/upload-artifact@v7
+        with:
+          archive: false
+          path: dist/${{ matrix.platform }}/${{ matrix.arch }}/netavark-*.rpm
+          if-no-files-found: error
+          retention-days: 30
 
   draft-release:
     name: Verify individual raw binaries and attach checksums (draft)
