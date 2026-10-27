@@ -64,14 +64,16 @@ cd "$DIR"
 # Ubuntu Stonking carries an obsolete prost 0.12.6 quilt downgrade,
 # while upstream Netavark 1.17.2 supports the distro's prost 0.14.
 # Debian fixed the same problem in netavark 1.17.2-3 (bug #1145651)
-# by removing 0013-compile-against-prost-12.6.patch.
+# by dropping obsolete prost 0.12 and mozim 3 patches.
 if [[ "$SUITE" == stonking ]]; then
   echo "=== Removing obsolete Ubuntu prost 0.12 quilt patch ==="
   export QUILT_PATCHES=debian/patches
   test -f debian/patches/0013-compile-against-prost-12.6.patch
+  test -f debian/patches/0005-Compile-against-mozim-3.patch
   grep -Fxq '0013-compile-against-prost-12.6.patch' debian/patches/series
+  grep -Fxq '0005-Compile-against-mozim-3.patch' debian/patches/series
   quilt pop -a
-  sed -i '/^0013-compile-against-prost-12[.]6[.]patch$/d' debian/patches/series
+  sed -i '/^0013-compile-against-prost-12[.]6[.]patch$/d; /^0005-Compile-against-mozim-3[.]patch$/d' debian/patches/series
   quilt push -a
   grep -Fq 'prost = "0.14.1"' Cargo.toml || {
     echo "FAIL: unexpected Netavark 1.17.2 prost dependency"; exit 1;
