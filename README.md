@@ -1,158 +1,85 @@
-# Netavark Ubuntu and Debian published-port backport (unofficial)
+# Netavark backports
 
-Rebuilds **Ubuntu and Debian native Netavark source packages** with a version-specific Debian quilt backport of the nftables parts of
-[netavark PR #1483](https://github.com/containers/netavark/pull/1483).
-Source and packaging come from the target distribution; this repository stores version-specific
-**unified diff quilt patches**, build scripts, tests, and CI. The build fetches
-native distribution source directly; no upstream fork or source-rewriting helper is needed.
-It does **not** replace Podman or Aardvark DNS.
+**Unofficial, distribution-native Netavark packages for a published-port isolation bug.**
 
-**Experimental. A successful package build does not establish that Podman networking works.**
-Release is gated on runtime regression tests, including in-place upgrades with active containers.
+- **Problem:** [Netavark issue #709](https://github.com/containers/netavark/issues/709) — a container on one isolated Podman bridge cannot reach another container through its **published host port**.
+- **Upstream fix:** [Netavark PR #1483](https://github.com/containers/netavark/pull/1483) — marks connections handled by DNAT and accepts them before the inter-bridge isolation chain. The fix is included in newer upstream Netavark releases.
 
-## CI targets
+This repository backports **only PR #1483** for distribution versions that do not yet contain the fix. It does not fork Netavark, replace Podman, enable unrestricted bridge-to-bridge access, or incorporate the separate upstream PR #1522.
 
-| Distribution / suite | Minimum supported native source | Netavark family | Architectures | Status |
-|---|---|---|---|---|
-| Debian trixie | 1.14.0-2 | 1.14 | amd64 / arm64 | Candidate |
-| Ubuntu resolute (26.04 LTS) | 1.16.1-3.1 | 1.16 | amd64 / arm64 | Candidate |
-| Ubuntu stonking (26.10 interim) | 1.17.2-2 | 1.17 | amd64 / arm64 | Candidate |
-| Ubuntu noble (24.04 LTS) | 1.4.0-4 | 1.4, no nftables driver | amd64 / arm64 | Stock-network compatibility tests; no PR #1483 patch |
-| Debian forky | 1.17.2-3 | 1.17 | amd64 / arm64 | Candidate |
-| Debian sid | 1.17.2-3 | 1.17 | amd64 / arm64 | Candidate |
-| Debian experimental | 2.0.0-1 | 2.0 | amd64 / arm64 | Experimental (allowed failure in CI) |
+> **Not a production-ready package repository.** Build and networking tests must pass for each distribution and architecture before installing or publishing anything.
 
-The build selects the latest native source from configured release, security,
-and updates pockets. It **fails closed** if the source switches Netavark patch
-families, is below the minimum, or no longer matches reviewed quilt anchors. Debian Bookworm remains unsupported. Ubuntu 22.04 Jammy is intentionally excluded from this downstream project; current Ubuntu targets are Noble 24.04 LTS, Resolute 26.04 LTS, and Stonking 26.10. Only Resolute and Stonking can directly use the nftables PR #1483 backport: Noble 1.4 predates Netavark's nftables driver. Noble compatibility testing is not equivalent to delivering a backport package. Ubuntu Pro/ESM releases are not included in this standard-support matrix. Experimental uses Sid as a base with Debian experimental enabled;
-**Netavark 2.x requires Podman 6.x** and is not appropriate for Podman 5.4.2.
+## How it works
 
-### Native base revisions and version ordering
+1. Download the distribution's own Netavark source package: `apt-get source` for Debian/Ubuntu or an official Fedora SRPM.
+2. Apply the small, version-specific patch using Debian **quilt** or the Fedora **RPM SPEC**. Preserve each distribution's build flags, packaging and dependencies.
+3. Rebuild native `.deb` or `.rpm` packages, then test rootful Podman networking on disposable CI hosts.
+4. Upload **one uncompressed package per passing CI job**. Public publication is a separate, manual decision.
 
-The source package is selected **fresh from the distro's native release,
-updates and security source indexes**, not pinned to `1.14.0-2` forever.
-A changed Netavark source family or changed quilt patch anchors fails closed
-for review. The build also rejects a newer native binary candidate if its
-matching source index is missing, so a security update cannot be silently
-ignored.
+The base source is selected from current native repositories, including security updates. If an update changes the supported Netavark code or packaging, the build fails rather than silently using an incompatible patch.
 
-CI run `N` produces `<native-source-version>+xdddN~<suite>`. For example,
-`1.14.0-2+xddd78~trixie` becomes
-`1.14.0-2+deb13u1+xddd79~trixie` when Debian issues an updated native
-source. This preserves the fix while incorporating native security patches.
-The `+xddd` suffix intentionally outranks some official updates, so a user
-could remain on the old custom build until our next rebuild; **monitor native
-security advisories and stop/promote releases only after rebase testing**.
-Do not rely on suffix order as a security-update mechanism.
+## Supported targets
 
-The Fedora RPM builder similarly inherits the native SRPM `Release` and
-appends `.xdddN` before `.fc43`/`.fc44`. Never reset a newer official
-RPM release to `1.xdddN`. Debian `0xddd` was never publicly released
-from this project and is no longer used.
+| Distribution | Native source family | CI status |
+| --- | --- | --- |
+| Debian 13 (Trixie) | 1.14 | Patched `.deb` build and runtime tests |
+| Debian Forky, Sid | 1.17 | Patched `.deb` build and runtime tests |
+| Ubuntu 26.04 (Resolute) | 1.16 | Patched `.deb` build and runtime tests |
+| Ubuntu 26.10 (Stonking) | 1.17 | Patched `.deb` build and runtime tests |
+| Fedora 43, 44 | 1.17 | Patched `.rpm` build and runtime tests |
+| openSUSE Leap 16.0, 16.1 | Distribution-native | **Stock-network checks only**; no patched RPM yet |
+| Debian Experimental | 2.0 | **Experimental build only**; not eligible for release |
 
-### Patch inputs
+All matrix targets use native **AMD64/x86-64** and **ARM64/AArch64** runners. Ubuntu 24.04 Noble ships Netavark 1.4 without the relevant nftables driver, so it is not a patched target. Older Ubuntu releases, Debian Bookworm, Arch and openSUSE Tumbleweed are outside the required package matrix.
 
-- `patches/1.14/0001-allow-published-ports-across-isolated-bridges.patch`
-- `patches/1.16/0001-allow-published-ports-across-isolated-bridges.patch`
-- `patches/1.17/0001-allow-published-ports-across-isolated-bridges.patch`
-- `patches/2.0/0001-allow-published-ports-across-isolated-bridges.patch`
+## Why there are several patches
 
-The build copies the matching patch into `debian/patches`, adds it to the
-`series` file, and applies it with `quilt push`. Patch failure fails the job.
+The patches live in `patches/{1.14,1.16,1.17,2.0}/`.
 
-### Verification
+The underlying logic comes from upstream PR #1483: write `DNAT_MASK` (0x1000) to conntrack state when a published host-port DNAT rule matches, then accept that marked traffic in `FORWARD` before checking bridge isolation. **Direct connections between isolated bridges remain blocked.**
 
-All twelve Debian/Ubuntu suite/architecture combinations build distribution-native packages and validate
-the resulting `.deb` metadata and packaged binary's `--version`. Privileged CI runtime checks on **Debian Trixie, Ubuntu Resolute and Stonking, amd64 and arm64**
-exercise the stock distribution package, an **in-place upgrade with active
-containers**, and a patched install on freshly created networks. They verify
-same-bridge DNS/TCP, host port publishing, direct bridge isolation, and
-cross-isolated-bridge access to published host ports.
+- **1.14:** older Rust nftables schema with `Vec`, boxed expressions, and owned strings.
+- **1.16, 1.17 and 2.0:** newer schema using `Cow` and borrowed expressions. The patch bodies are nearly identical, apart from upstream source locations.
+- **Live upgrades:** unlike the original upstream change, these backports also insert the accept rule *before an already-existing isolation jump*. Appending the rule at the end of a populated `FORWARD` chain would leave running Podman networks broken. That is the only intentional behavioral addition beyond the upstream fix.
 
-**Separate real Compose tests** run two persistent `podman compose` services
-on isolated, externally provisioned dual-stack bridges. On amd64 and arm64
-Debian Trixie, Ubuntu Resolute and Stonking they check same-bridge DNS,
-IPv4/IPv6 isolation (direct access must fail), IPv4/IPv6 published-port access
-through the host gateway, fresh candidate installations, and candidate upgrades
-while the Compose project and its networks already exist. Both Compose and
-lower-level tests must pass before a draft release can be created. These
-new Compose tests are not considered validated until GitHub Actions passes. These tests must pass before
-creating a draft release. Separate privileged stock-Podman smoke tests run on Noble on both architectures. They never install an incompatible Netavark backport.
+Patch headers link back to [issue #709](https://github.com/containers/netavark/issues/709) and [merged PR #1483](https://github.com/containers/netavark/pull/1483). The original upstream Rust comments are kept inside the patches.
 
-The Debian `dh_auto_test` step in the initial successful run invoked a Cargo
-build, **not the Rust unit-test suite**; additional unit-test coverage is still
-needed. Other Debian suites currently have package-build verification rather
-than equivalent Podman integration coverage.
+## What CI verifies
 
-### Native build
+The [GitHub Actions workflow](.github/workflows/build.yml) uses two matrices: **`deb`** for Debian/Ubuntu and **`rpm`** for Fedora/openSUSE. Each candidate builds and tests on the same runner; the implementation is in `scripts/ci-*.sh`, not duplicated in the workflow YAML.
 
-In an amd64 or arm64 Linux environment with Docker:
+The crucial regression launches **two persistent Podman Compose services on separate isolated, dual-stack bridges**:
+
+- Before installing the patch, connections from one container to the other's **published IPv4 and IPv6 host ports must fail**, while the host can reach those ports.
+- After an in-place Netavark upgrade, with the networks already present, **both published ports must work**.
+- Direct IPv4/IPv6 connections between the isolated bridges must still fail. Fresh patched-network tests and ordinary DNS/connectivity checks must also pass.
+
+A successful compilation is not a substitute for these tests. The openSUSE jobs currently validate only stock behavior; they do **not** prove that a patched openSUSE RPM works.
+
+Passing jobs upload the original individual `.deb` or `.rpm` with `actions/upload-artifact@v7` and `archive: false`, without wrapping it in a ZIP. Experimental builds are not release candidates.
+
+## Package versions and release process
+
+The committed [`release/revision.txt`](release/revision.txt) starts at **1**. GitHub Actions run numbers do **not** change the package version. Increment this number only in a reviewed package-update PR:
+
+- Debian/Ubuntu: `<native-source-version>+xddd1~<suite>`
+- Fedora: `<native-RPM-release>.xddd1.fcXX`
+
+For example, a new Debian security source `1.14.0-2+deb13u1` is rebased into `1.14.0-2+deb13u1+xddd1~trixie`. Because custom versions can delay automatic native security upgrades, review security updates and rebuild promptly.
+
+Merging an approved PR runs validation but **does not publish** packages. A **manual workflow dispatch on protected `main`** rebuilds and verifies the candidates, attaches 10 Debian/Ubuntu `.deb` and 4 Fedora `.rpm` packages directly to one **draft** GitHub Release, and generates `SHA256SUMS`. The unified tag is `nv1483-r1-g<commit>`. Publication remains manual. Ubuntu PPA source uploads and a signed Debian APT repository are separate steps described in [PUBLISHING.md](PUBLISHING.md).
+
+## Build locally
+
+On an AMD64 Linux Docker host, for example:
 
 ```sh
-docker run --rm --pull=always -v "$PWD:/work" -w /work \
-  -e SUITE=trixie -e EXPECTED_ARCH=arm64 -e REVISION=1 \
+docker run --rm --pull=always 
+  -v "$PWD:/work" -w /work 
+  -e SUITE=trixie -e EXPECTED_ARCH=amd64 -e REVISION=1 
   debian:trixie bash scripts/build.sh
 ```
 
-`EXPECTED_ARCH` must match the actual container architecture. For x86-64, use
-`amd64`; for experimental, use `debian:sid` and `SUITE=experimental`.
-Ubuntu 26.04 and 26.10 use `ubuntu:resolute` or `ubuntu:stonking` with the
-corresponding `SUITE`. Noble should not receive these newer Netavark builds.
-Artifacts appear under `dist/<suite>/<arch>/` with `.deb`, `.dsc`, Debian/Ubuntu
-source components, build records, and checksums. Building does not touch host
-networking or replace installed packages.
+The resulting binary and source files appear under `dist/trixie/amd64/`. Use the matching architecture, distro image and suite for other targets. These scripts only build packages; they do not install Netavark on the host.
 
-### Two self-contained build matrices, uncompressed Actions artifacts and draft Releases
-
-`.github/workflows/build.yml` contains two matrices: `deb` (Trixie,
-Forky, Sid, Resolute, Stonking and experimental build-only), and `rpm`
-(Fedora 43/44 patched builds plus Leap 16.0/16.1 stock-network tests).
-Each candidate builds and exercises its own same-runner Podman regressions.
-Implementation lives in reusable `scripts/ci-*.sh`; no separate artifact
-download job is needed for the runtime tests.
-
-Each successful eligible matrix job also uses **`actions/upload-artifact@v7`
-with `archive: false`**, uploading the original individual `.deb` or
-`.rpm` as a directly downloadable uncompressed Actions artifact. This
-works for pull requests too, with normal artifact retention; it does not
-publish a package to a repository. In a protected-main run, passing jobs
-also attach their raw binaries to a **draft GitHub Release** with
-`gh release upload` (also uncompressed). The final release job verifies
-**10 .deb and 4 Fedora .rpm** assets and attaches `SHA256SUMS`. The release
-stays draft for manual review; no automatic public publishing occurs.
-For later multi-job downloads of uncompressed Actions artifacts, use
-`actions/download-artifact@v8`.
-
-The downstream revision `N` is stored in committed `release/revision.txt`,
-initially `1`, **not** in the GitHub Actions run number. Debian/Ubuntu use
-`+xdddN~suite`; Fedora uses `<native-release>.xdddN.fcXX`.
-PRs and reruns reuse that revision; the Actions UI distinguishes their
-artifacts by run and commit. Increment it in a reviewed update/release PR
-only when preparing a new distribution of changed package contents.
-Use one unified release candidate tag `nv1483-rN-g<first-12-SHA>`.
-Main pushes only run CI; **manual `workflow_dispatch` from main** creates
-the unpublished draft release. Draft creation refuses reuse of an xddd
-revision already allocated to another release, even on a different commit.
-Source-package signing and openSUSE OBS packaging remain separate.
-
-See [PUBLISHING.md](PUBLISHING.md) for the proposed Ubuntu PPA (`xddd` if
-available), the signed Debian APT archive at `https://apt.xddd.org`, and release
-gates. No package is installed on a production system. Do not promote a draft until
-the cross-bridge regression, dual-stack checks, package policy review,
-and rollback strategy are validated. Deployment may require safely regenerating
-Netavark's existing nftables rules during a maintenance window.
-
-The `xddd` suffix is a downstream package marker; no Debian or Netavark
-upstream affiliation is claimed.
-### Fedora 43 and Leap 16.1 (2026-10-27)
-
-Fedora 43 and 44 are both built from their native Netavark 1.17.2 SRPMs
-with the PR #1483 patch. Both have AMD64/ARM64 source-RPM build and the
-same two-container Podman Compose IPv4/IPv6 pre-patch failure versus
-post-patch success regression. Fedora 43 is maintained only until EOL.
-
-Leap 16.1 joins Leap 16.0 for AMD64/ARM64 **stock** Podman network
-regression against `opensuse/leap:16.1`. Leap 16.1 uses Netavark 1.17.2,
-while 16.0 uses 1.14.1. The stock tests are not candidate RPM builds;
-a release-native openSUSE source RPM/OBS package and dual-stack A/B
-integration validation remain required. Upstream PR #1522 is excluded.
+See [PUBLISHING.md](PUBLISHING.md) for release checks, signing, rollback and native PPA/APT packaging details.
