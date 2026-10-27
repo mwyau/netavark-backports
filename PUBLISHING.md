@@ -1,16 +1,38 @@
-# Publishing Ubuntu and Debian Netavark packages
+# Publishing Netavark PR #1483 Debian/Ubuntu and Fedora packages
 
 **Status: experimental. Do not publish/install until rootful Podman network regressions pass.** The GitHub Actions matrix must validate the stock distribution package, an in-place upgrade while existing containers are running, and the patched binary on fresh networks. Inspect failures instead of treating a successful package build as proof of runtime correctness.
 
 The native patched package versions currently targeted are Debian Trixie 1.14.0-2, Ubuntu Resolute (26.04 LTS) 1.16.1-3.1, and Ubuntu Stonking (26.10 interim) 1.17.2-2. Ubuntu Noble (24.04 LTS) ships Netavark 1.4.0-4, which predates the nftables driver, so only its native Podman networking is tested. Ubuntu Jammy (22.04 LTS) is explicitly excluded from this downstream packaging/testing project. Older Ubuntu Pro/ESM releases are also out of scope.
+
+## CI draft GitHub Releases and tags
+
+Two matrices build and validate each candidate on the same GitHub runner.
+On protected `main` (push or manual dispatch), `scripts/ci-release.sh init`
+creates `nv1483-rN-gSHA12` as an **unpublished draft**, where `N` equals
+the GitHub Actions run number. A package uploads its own raw binary directly
+using `gh release upload` only when its build, ordinary networking, dual-stack
+Podman Compose fresh and before/after-upgrade tests pass. Fedora 43/44 follow
+the same gate; Leap 16.0/16.1 are stock-only tests and produce no release RPM.
+Finalization verifies exactly 10 .deb and 4 .rpm assets, then attaches
+`SHA256SUMS` and leaves the release draft. No ZIP-formatted Actions artifact
+is used for the published binaries, and no tag is force-moved or asset
+overwritten. The experimental Netavark 2.x build is non-release.
+
+Packages use `+0xdddN~suite` in Debian/Ubuntu and `1.xdddN.fcXX` as
+the Fedora RPM Release field; retain these family-specific formats for native
+package-manager version ordering. The tag includes the complete revision
+and commit identity for traceability. Never use a new SHA with an existing
+package revision. To publish publicly, a human must review the candidate
+build logs and release notes and manually promote the draft. PRs never
+create releases.
 
 ## Ubuntu PPA (Launchpad)
 
 Proposed owner: `xddd`, if the Launchpad name is available. Email: `albert@xddd.org`. PPA name: `netavark`. The resulting identifier would be `ppa:xddd/netavark`. Account availability must be checked interactively, and the user must register/verify their email.
 
 1. Log into https://launchpad.net and create or activate the public PPA. Register a source-upload OpenPGP signing key at https://launchpad.net/~/+editpgpkeys; never store the private key in GitHub Actions secrets or in the Git repository merely to automate publishing.
-2. Check that the **release-specific Ubuntu source** build has passed CI and includes `netavark_<version>_source.changes`, its `.dsc`, original tarball, and Debian quilt tarball. Launchpad accepts source uploads only, not prebuilt `.deb` files.
-3. Download the Ubuntu **source** artifact from the passing CI run on a trusted local Ubuntu system, verify the artifact SHA256SUMS, and unpack in one local directory.
+2. Confirm that the target CI run completed successfully, and verify its draft GitHub Release tag `nv1483-rN-g<commit>` and binary checksums. **That release contains only raw binary .deb/.rpm assets, not a PPA-uploadable source package.**
+3. On a trusted local Ubuntu build machine, check out the exact approved commit and rebuild the **native Ubuntu source** with `SUITE=resolute` or `SUITE=stonking`, `EXPECTED_ARCH=amd64`, and `REVISION=N`, using `scripts/build.sh`. Collect the resulting `netavark_<version>_source.changes`, `.dsc`, `.debian.tar.*` and referenced original tarballs. Verify source checksums and quilt patch order before signing; do not try to upload the CI binary .deb to Launchpad.
 4. Set `DEBFULLNAME='Albert Yau'`, `DEBEMAIL='albert@xddd.org'`. Sign the exact `netavark_*_source.changes` file and the corresponding source metadata with `debsign -k albert@xddd.org <exact-source.changes>`. Verify the signature.
 5. Upload with `dput ppa:xddd/netavark <exact-source.changes>`. Wait for Launchpad to build each intended architecture and inspect its logs. Do not assume an Ubuntu source build succeeded merely because Debian builds succeeded.
 6. Publish a separate signed source upload for each validated Ubuntu suite (currently Resolute and Stonking), after all corresponding builds and runtime tests pass. Do not copy binaries between releases. After publishing and independent testing on disposable Ubuntu systems, document `sudo add-apt-repository ppa:xddd/netavark`, `sudo apt update`, `apt-cache policy netavark`, and an explicit tested Netavark version.
