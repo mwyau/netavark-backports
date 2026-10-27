@@ -36,8 +36,8 @@ trap cleanup EXIT
 podman network create --subnet 10.241.21.0/24 --opt isolate=true nv_source
 podman network create --subnet 10.241.22.0/24 --opt isolate=true nv_target
 podman run --cgroups=disabled -d --name nv_server --network nv_target \
-  -p 0.0.0.0:18081:8080 docker.io/library/alpine:3.20 \
-  sh -c 'set -eu; mkdir -p /www; echo PUBLISHED_PORT_OK >/www/index.html; exec busybox httpd -f -p 8080 -h /www'
+  -p 0.0.0.0:18081:8080 docker.io/library/python:3.12-alpine \
+  sh -c 'set -eu; mkdir -p /www; echo PUBLISHED_PORT_OK >/www/index.html; exec python3 -m http.server 8080 --bind 0.0.0.0 --directory /www'
 
 # Confirm the service actually stays alive.  Without this, a failure from
 # `podman exec` obscures the server's exit code and logs.
