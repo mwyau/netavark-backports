@@ -26,12 +26,28 @@ The script **fails closed** if the distribution source version changes or the so
 code no longer matches the expected patch anchors. Debian Bookworm remains unsupported. Ubuntu 22.04 Jammy is intentionally excluded from this downstream project; current Ubuntu targets are Noble 24.04 LTS, Resolute 26.04 LTS, and Stonking 26.10. Only Resolute and Stonking can directly use the nftables PR #1483 backport: Noble 1.4 predates Netavark's nftables driver. Noble compatibility testing is not equivalent to delivering a backport package. Ubuntu Pro/ESM releases are not included in this standard-support matrix. Experimental uses Sid as a base with Debian experimental enabled;
 **Netavark 2.x requires Podman 6.x** and is not appropriate for Podman 5.4.2.
 
-### Versioning
+### Native base revisions and version ordering
 
-Outputs follow `<Debian-version>+0xddd1~<suite>`, for example
-`1.14.0-2+0xddd1~trixie`. They supersede the packaged base version but generally
-sort before a later Debian security revision such as `+deb13u1`. **An official
-update can replace this patch**, so monitor Debian uploads.
+The source package is selected **fresh from the distro's native release,
+updates and security source indexes**, not pinned to `1.14.0-2` forever.
+A changed Netavark source family or changed quilt patch anchors fails closed
+for review. The build also rejects a newer native binary candidate if its
+matching source index is missing, so a security update cannot be silently
+ignored.
+
+CI run `N` produces `<native-source-version>+xdddN~<suite>`. For example,
+`1.14.0-2+xddd78~trixie` becomes
+`1.14.0-2+deb13u1+xddd79~trixie` when Debian issues an updated native
+source. This preserves the fix while incorporating native security patches.
+The `+xddd` suffix intentionally outranks some official updates, so a user
+could remain on the old custom build until our next rebuild; **monitor native
+security advisories and stop/promote releases only after rebase testing**.
+Do not rely on suffix order as a security-update mechanism.
+
+The Fedora RPM builder similarly inherits the native SRPM `Release` and
+appends `.xdddN` before `.fc43`/`.fc44`. Never reset a newer official
+RPM release to `1.xdddN`. Debian `0xddd` was never publicly released
+from this project and is no longer used.
 
 ### Patch inputs
 
@@ -85,34 +101,32 @@ Artifacts appear under `dist/<suite>/<arch>/` with `.deb`, `.dsc`, Debian/Ubuntu
 source components, build records, and checksums. Building does not touch host
 networking or replace installed packages.
 
-### Two self-contained build matrices and raw GitHub Release assets
+### Two self-contained build matrices, uncompressed Actions artifacts and draft Releases
 
-`.github/workflows/build.yml` defines two candidate matrices: `deb`
-(Debian Trixie, Forky, Sid; Ubuntu Resolute and Stonking; optional experimental
-build-only), and `rpm` (Fedora 43/44 RPM build+test; Leap 16.0/16.1 stock-only
-network regression). Both arches run independently. Each eligible candidate job
-builds a **distribution-native** package and runs its own network regression
-before making a release upload. `scripts/ci-common.sh`, `ci-deb.sh`,
-`ci-rpm.sh`, and `ci-release.sh` implement the workflow; the YAML contains
-only matrix entries, permissions, gates and script invocation.
+`.github/workflows/build.yml` contains two matrices: `deb` (Trixie,
+Forky, Sid, Resolute, Stonking and experimental build-only), and `rpm`
+(Fedora 43/44 patched builds plus Leap 16.0/16.1 stock-network tests).
+Each candidate builds and exercises its own same-runner Podman regressions.
+Implementation lives in reusable `scripts/ci-*.sh`; no separate artifact
+download job is needed for the runtime tests.
 
-After a protected-main push, CI creates an **unpublished draft prerelease**.
-Each eligible job uploads its **single raw .deb or .rpm directly** with
-`gh release upload` only after the job's networking tests pass. No
-`actions/upload-artifact` or per-package ZIP artifacts are used. The final
-job verifies the set of **10 .deb and 4 Fedora .rpm** binaries and attaches
-`SHA256SUMS`; a human still has to inspect and manually publish the draft.
-Pull requests do not create or upload release binaries, because GitHub tokens
-for untrusted PRs must not have release-publishing privileges.
+Each successful eligible matrix job also uses **`actions/upload-artifact@v7`
+with `archive: false`**, uploading the original individual `.deb` or
+`.rpm` as a directly downloadable uncompressed Actions artifact. This
+works for pull requests too, with normal artifact retention; it does not
+publish a package to a repository. In a protected-main run, passing jobs
+also attach their raw binaries to a **draft GitHub Release** with
+`gh release upload` (also uncompressed). The final release job verifies
+**10 .deb and 4 Fedora .rpm** assets and attaches `SHA256SUMS`. The release
+stays draft for manual review; no automatic public publishing occurs.
+For later multi-job downloads of uncompressed Actions artifacts, use
+`actions/download-artifact@v8`.
 
-The CI run number `N` is the monotonically increasing downstream revision:
-Debian/Ubuntu `<base>+0xdddN~<suite>`, Fedora
-`netavark-1.17.2-1.xdddN.fc43|fc44.<arch>.rpm`, and immutable Git tag
-`nv1483-rN-g<first-12-commit-hash>`. Rerunning a release with the same
-tag fails rather than overwriting existing binary assets. Source packages for
-Ubuntu PPA and a future openSUSE OBS RPM build remain separate manual steps.
-Experimental Netavark 2.x is not a release asset; Leap passes only a stock
-compatibility test, not a patched RPM candidate.
+The run number `N` is the unique downstream revision in Debian
+`+xdddN~suite`, Fedora `<native-release>.xdddN.fcXX`, and tag
+`nv1483-rN-g<first-12-SHA>`. No force-replacement of an existing release
+asset or tag. PPA source rebuild/signing and openSUSE OBS builds remain
+separate and are not represented by raw CI binary release assets.
 
 See [PUBLISHING.md](PUBLISHING.md) for the proposed Ubuntu PPA (`xddd` if
 available), the signed Debian APT archive at `https://apt.xddd.org`, and release
