@@ -1,88 +1,93 @@
-# Publishing Netavark PR #1483 Debian/Ubuntu and Fedora packages
+# Publishing Netavark backports
 
-**Status: experimental. Do not publish/install until rootful Podman network regressions pass.** The GitHub Actions matrix must validate the stock distribution package, an in-place upgrade while existing containers are running, and the patched binary on fresh networks. Inspect failures instead of treating a successful package build as proof of runtime correctness.
+This guide is for maintainers preparing a release. GitHub Actions builds and tests candidate packages; publishing to an APT repository, Launchpad PPA or RPM build service is a separate step.
 
-The native patched package versions currently targeted are Debian Trixie 1.14.0-2, Ubuntu Resolute (26.04 LTS) 1.16.1-3.1, and Ubuntu Stonking (26.10 interim) 1.17.2-2. Ubuntu Noble (24.04 LTS) ships Netavark 1.4.0-4, which predates the nftables driver, so only its native Podman networking is tested. Ubuntu Jammy (22.04 LTS) is explicitly excluded from this downstream packaging/testing project. Older Ubuntu Pro/ESM releases are also out of scope.
+The backport addresses [Netavark issue #709](https://github.com/containers/netavark/issues/709) using the change from [merged PR #1483](https://github.com/containers/netavark/pull/1483).
 
-## CI draft GitHub Releases and tags
+## Before a release
 
-Two matrices build and validate each candidate on the same GitHub runner.
-Only on manual `workflow_dispatch` from protected `main`,
-`scripts/ci-release.sh init` creates an **unpublished draft** tag
-`nv1483-rN-gSHA12`. `N` comes from committed `release/revision.txt`,
-not the workflow run number. Approval and merge run ordinary CI but
-do **not** automatically publish or create a draft release.
-A package uploads its own raw binary directly
-using `gh release upload` only when its build, ordinary networking, dual-stack
-Podman Compose fresh and before/after-upgrade tests pass. Fedora 43/44 follow
-the same gate; Leap 16.0/16.1 are stock-only tests and produce no release RPM.
-Finalization verifies exactly 10 .deb and 4 .rpm assets, then attaches
-`SHA256SUMS` and leaves the release draft. On pull requests and main builds, each passing package uses
-`actions/upload-artifact@v7` with `archive: false`, making its original
-file individually downloadable. Use `actions/download-artifact@v8` for
-uncompressed later downloads. No ZIP-formatted Actions artifact
-is used for the published binaries, and no tag is force-moved or asset
-overwritten. The experimental Netavark 2.x build is non-release.
+1. **Review the source.** Confirm that each package is based on the intended distribution release and includes any newer distribution security patches. If the upstream fix is already present, retire that backport rather than applying it twice.
+2. **Run the network tests.** The required builds must pass both fresh-install and in-place-upgrade checks. In particular, published IPv4 and IPv6 ports must work across isolated bridges without permitting direct connections between them.
+3. **Confirm the package revision.** [`release/revision.txt`](release/revision.txt) contains the downstream revision, initially `1`. Increase it in a reviewed PR when publishing changed package contents; never tie it to the GitHub Actions run number.
+4. **Keep a way back.** Have the distribution's original package available and test a downgrade on a disposable machine before recommending the new package to others.
 
-Packages use `<latest native source>+xdddN~suite` for Debian and Ubuntu,
-and `<native RPM Release>.xdddN.fcXX` for Fedora. Official `+deb13u1`
-and newer distro-native SRPM releases are inherited rather than bypassed.
-The `+xddd` Debian suffix can outrank a later official security update
-until the backport is rebuilt; explicitly monitor distribution advisories.
-Each new source revision must pass patch and Compose regressions. The committed `release/revision.txt` starts at `1`. Bump it only in a
-reviewed update or release PR, never on a CI retry or documentation change.
-The unified tag records the revision and commit; draft creation refuses a
-revision already allocated to another release. To publish publicly, a human must review the candidate
-build logs and release notes and manually promote the draft. PRs never
-create releases.
+A successful build alone does not prove that the package works on an existing Podman installation.
 
-## Ubuntu PPA (Launchpad)
+## GitHub release candidates
 
-Proposed owner: `xddd`, if the Launchpad name is available. Email: `albert@xddd.org`. PPA name: `netavark`. The resulting identifier would be `ppa:xddd/netavark`. Account availability must be checked interactively, and the user must register/verify their email.
+Merge the approved change to `main`, then manually start [`build.yml`](.github/workflows/build.yml) using **Run workflow** with the `main` branch selected. Ordinary pushes and pull requests perform CI but do not create a release.
 
-1. Log into https://launchpad.net and create or activate the public PPA. Register a source-upload OpenPGP signing key at https://launchpad.net/~/+editpgpkeys; never store the private key in GitHub Actions secrets or in the Git repository merely to automate publishing.
-2. Confirm that the target CI run completed successfully, and verify its draft GitHub Release tag `nv1483-rN-g<commit>` and binary checksums. **That release contains only raw binary .deb/.rpm assets, not a PPA-uploadable source package.**
-3. On a trusted local Ubuntu build machine, check out the exact approved commit and rebuild the **native Ubuntu source** with `SUITE=resolute` or `SUITE=stonking`, `EXPECTED_ARCH=amd64`, and `REVISION=N`, using `scripts/build.sh`. Collect the resulting `netavark_<version>_source.changes`, `.dsc`, `.debian.tar.*` and referenced original tarballs. Verify source checksums and quilt patch order before signing; do not try to upload the CI binary .deb to Launchpad.
-4. Set `DEBFULLNAME='Albert Yau'`, `DEBEMAIL='albert@xddd.org'`. Sign the exact `netavark_*_source.changes` file and the corresponding source metadata with `debsign -k albert@xddd.org <exact-source.changes>`. Verify the signature.
-5. Upload with `dput ppa:xddd/netavark <exact-source.changes>`. Wait for Launchpad to build each intended architecture and inspect its logs. Do not assume an Ubuntu source build succeeded merely because Debian builds succeeded.
-6. Publish a separate signed source upload for each validated Ubuntu suite (currently Resolute and Stonking), after all corresponding builds and runtime tests pass. Do not copy binaries between releases. After publishing and independent testing on disposable Ubuntu systems, document `sudo add-apt-repository ppa:xddd/netavark`, `sudo apt update`, `apt-cache policy netavark`, and an explicit tested Netavark version.
+The manually started run creates an **unpublished draft** with a unified tag such as `nv1483-r1-g<commit>`. Passing jobs upload their original binary packages individually:
 
-See https://ubuntu.com/docs/launchpad/user/how-to/packaging/ppa-package-upload/ and https://ubuntu.com/docs/launchpad/user/reference/packaging/ppas/ppa/.
+- 10 Debian/Ubuntu `.deb` packages for the five supported suites and two architectures.
+- 4 Fedora `.rpm` packages for Fedora 43/44 on x86-64 and AArch64.
+- A `SHA256SUMS` file after the required packages are present.
 
-## Debian repository at https://apt.xddd.org
+openSUSE currently has stock-network tests but no patched RPM. Debian Experimental builds are not included in the release.
 
-Prefer a **separate public GitHub repository** named `mwyau/apt.xddd.org` so signed APT metadata/binary artifacts are not mixed with Rust source/build logic. The GitHub repository and `apt.xddd.org` DNS/Pages settings must be created by the domain owner; neither is set up by this source repository.
+Review the draft's package versions, checksums and test results. GitHub does not publish the draft automatically, and the draft assets do not themselves populate a PPA, COPR project or APT repository.
 
-1. In the new GitHub repository, choose Settings → Pages → Deploy from `main` / `docs`; configure custom domain `apt.xddd.org` **before** adding the DNS record. Add a DNS `CNAME` with host `apt` and target `mwyau.github.io`; enable HTTPS.
-2. Generate a **separate dedicated archive-signing GPG key** whose UID includes `albert@xddd.org`. Keep its private component offline or securely in trusted operator storage. The public fingerprint must be available independently for verification.
-3. Install `reprepro` locally. Place in `docs/conf/distributions`:
+## Ubuntu: Launchpad PPA
 
-       Origin: xddd
-       Label: xddd Netavark Backports
-       Codename: trixie
-       Suite: trixie
-       Architectures: amd64 arm64
-       Components: main
-       Description: Unofficial tested Netavark backports
-       SignWith: REPLACE_WITH_FULL_SIGNING_KEY_FINGERPRINT
+**Launchpad builds the binaries.** Upload the modified **source package**, not the `.deb` file produced by GitHub Actions.
 
-4. Import only validated Trixie .deb files from the **same passing CI SHA**, after comparing checksums and package metadata, with `reprepro -b docs includedeb trixie <file.deb>` for each architecture. Run `reprepro -b docs export`, confirm the resulting `docs/dists/trixie/InRelease` and `docs/pool` contents are correct, and export the public key to `docs/xddd-archive-key.asc`. Add `docs/.nojekyll`; publish the static `docs` directory.
-5. Before announcing, use a **disposable** Debian Trixie VM to fetch the public key, verify its fingerprint independently, configure the APT `Signed-By` scope, execute `apt update`, and verify `apt-cache policy netavark` reports the intended version. Test installation, same-network traffic, host publishing, isolation, cross-network published-port access, and rollback.
+The Ubuntu branch of [`scripts/build.sh`](scripts/build.sh) already runs `dpkg-buildpackage -S -sa -us -uc` after adding the quilt patch and downstream changelog entry. It produces unsigned source metadata and the source components needed for upload:
 
-Example Debian Trixie deb822 source file (`/etc/apt/sources.list.d/xddd.sources`):
+- `netavark_<version>_source.changes`
+- `netavark_<version>.dsc`
+- The accompanying Debian packaging and original source tarballs
 
-    Types: deb
-    URIs: https://apt.xddd.org
-    Suites: trixie
-    Components: main
-    Signed-By: /etc/apt/keyrings/xddd.asc
+To publish:
 
-Do not use `apt-key` or disable APT signature checks. Do not place the private repository signing key in the Pages repository. Publish only suites actually validated on disposable runtime machines. Existing Forky, Sid, and Experimental outputs remain research artifacts until separately verified. See https://wiki.debian.org/DebianRepository/SetupWithReprepro and https://docs.github.com/en/pages/configuring-a-custom-domain-for-your-github-pages-site/managing-a-custom-domain-for-your-github-pages-site.
+1. Create a Launchpad PPA (proposed name: `ppa:xddd/netavark`), register an OpenPGP upload key and enable the intended architectures, including ARM64 if available to the PPA.
+2. Obtain the **exact approved source build**, including every file listed in `_source.changes`. The present workflow does not automatically submit these files to Launchpad.
+3. On a trusted signing machine, sign the source package and upload it:
 
-## Rollback and release gate
+   ```bash
+   debsign -k YOUR_GPG_KEY_ID netavark_<version>_source.changes
+   dput ppa:xddd/netavark netavark_<version>_source.changes
+   ```
 
-Never publish solely on the strength of successful compilation or static nftables-rule checks. Existing Podman networks and running containers must remain usable across an in-place package upgrade. Keep the official distribution package accessible for downgrade, and record a maintenance-window procedure for safely recreating network rules without cutting off SSH or other host access. No force-pushes and no automatic production deployment.
+4. Submit separate source packages for Resolute and Stonking. Wait for Launchpad to build its own AMD64/ARM64 binaries, inspect its logs and test the **PPA-built** packages before announcing them.
 
-## Upstream patch provenance
+The source version must be unique for each new upload. If the contents change after publication, prepare a new downstream revision. Do not put your personal signing key in the repository or expose it to pull-request workflows.
 
-Every quilt patch preserves the Netavark [PR #1483](https://github.com/containers/netavark/pull/1483) DNAT marking and FORWARD acceptance implementation and upstream comments ("Match on any rule that matches against DNAT_MASK" and "Ensure we allow the DNAT packets before we consult the isolation chains"). Netavark's API differs between 1.14 and newer releases; the patches adapt only those API forms and avoid incidental upstream refactoring. A necessary downstream addition detects an existing `NETAVARK-ISOLATION-1` jump and **inserts** the accept rule before that jump instead of appending at the end of an already initialized FORWARD chain. Without this exception, upgrades with existing bridges silently fail even though freshly-created networks may pass. Original patch origin and issue references are retained; downstream backport credited to Albert Yau <albert@xddd.org>.
+Launchpad documentation: [Uploading packages to a PPA](https://ubuntu.com/docs/launchpad/user/how-to/packaging/ppa-package-upload/).
+
+## Fedora: COPR
+
+**COPR builds the binaries from a modified source RPM.** Do not use a Fedora 43 source RPM as a replacement for Fedora 44's native packaging.
+
+[`scripts/build-fedora.sh`](scripts/build-fedora.sh) downloads the native Fedora source RPM, adds the patch to its SPEC and runs `rpmbuild -ba`. That produces a patched `.src.rpm` in the container's `/root/rpmbuild/SRPMS/`, as well as a binary RPM.
+
+**The current script saves only the binary RPM to `dist/`.** Before automating COPR submission, save the patched source RPM as a CI artifact too. Then:
+
+1. Create a COPR project and enable the relevant Fedora 43/44 x86-64 and AArch64 build environments.
+2. Submit the matching patched source RPM with `copr-cli build` or the COPR API. Limit each build to its intended Fedora targets.
+3. Wait for COPR's own build to finish, check its logs, and test the package installed from the COPR repository.
+
+Submitting a source RPM can trigger public repository publication if the COPR project is enabled. Treat this as a release action, not an ordinary CI step.
+
+COPR: [copr.fedorainfracloud.org](https://copr.fedorainfracloud.org/).
+
+## openSUSE: OBS (not yet ready)
+
+The openSUSE Leap 16.0 and 16.1 CI jobs currently exercise their **unmodified distribution packages**. They do not produce a patched RPM.
+
+Before publishing through the [Open Build Service](https://build.opensuse.org/), prepare a Leap-native SPEC/source package, add the reviewed patch, and run the same IPv4/IPv6 fresh-install and in-place-upgrade tests. Then submit those source files through `osc` or the OBS API and verify the OBS-built packages. Reusing Fedora's binary RPM is not a substitute for a native openSUSE build.
+
+## Debian: signed APT repository (planned)
+
+The proposed address is **`https://apt.xddd.org`**. It is not configured by this repository.
+
+A separate repository can publish the tested Debian binaries using `reprepro` or `aptly`. It needs a signing key, `dists/` metadata and a `pool/` directory. Publish the archive's **public** key and fingerprint so users can verify their APT source configuration; keep the private signing key out of the static website and source repository.
+
+For each Debian suite, publish only packages whose source version, architecture and checksums match the approved candidate. Test `apt update`, package selection, installation and rollback from the publicly served repository before documenting installation commands for end users.
+
+Reference: [Debian repository setup](https://wiki.debian.org/DebianRepository/SetupWithReprepro).
+
+## After publishing
+
+Packages built by Launchpad, COPR or OBS are **not byte-for-byte the same** as the GitHub CI binaries. Check the final hosted versions and repeat the networking regression against those packages. Record where each package was published, its source revision and how to return to the distribution package if necessary.
+
+Until a publishing destination has been configured and its packages checked, keep that destination listed as **planned**, not available.
