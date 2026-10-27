@@ -21,7 +21,11 @@ ci_container() {
   elif [[ "$mode" != build ]]; then
     echo "Invalid container mode: $mode" >&2; return 2
   fi
-  docker run "${options[@]}" "$@" "$image"
+  # Keep all docker options before IMAGE, then execute bash inside image.
+  local -a extra=()
+  while [[ $# -gt 0 && "$1" != bash ]]; do extra+=("$1"); shift; done
+  [[ "${1:-}" == bash ]] || { echo "Missing bash command" >&2; return 2; }
+  docker run "${options[@]}" "${extra[@]}" "$image" "$@"
 }
 
 ci_release_upload_if_main() {
