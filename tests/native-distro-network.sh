@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Native-package network regression for Arch and openSUSE. No custom packages.
-# Platform provided via TEST_PLATFORM=arch|tumbleweed|leap16|fedora44
+# Platform provided via TEST_PLATFORM=arch|tumbleweed|leap16|leap161|fedora43|fedora44
 set -Eeuo pipefail
 export NETAVARK_FW=nftables
-platform="${TEST_PLATFORM:?Set arch, tumbleweed, leap16, or fedora44}"
+platform="${TEST_PLATFORM:?Set arch, tumbleweed, leap16, leap161, fedora43, or fedora44}"
 case "$platform" in
   arch)
     pacman -Syu --noconfirm --needed podman netavark aardvark-dns nftables iproute2 curl jq crun
@@ -13,13 +13,13 @@ case "$platform" in
     zypper --non-interactive install --no-recommends \
       podman netavark aardvark-dns nftables iproute2 curl jq crun
     ;;
-  leap16)
+  leap16|leap161)
     # Leap 16.0 repositories do not provide crun; use the native runc package.
     zypper --non-interactive --gpg-auto-import-keys refresh
     zypper --non-interactive install --no-recommends \
       podman netavark aardvark-dns nftables iproute2 curl jq runc
     ;;
-  fedora44)
+  fedora43|fedora44)
     dnf -y --setopt=install_weak_deps=False install \
       podman netavark aardvark-dns nftables iproute curl jq crun
     ;;
@@ -54,7 +54,7 @@ export CONTAINERS_STORAGE_CONF=/etc/containers/storage.conf
 PODMAN_GLOBAL=(--storage-driver=vfs)
 RUNTIME=crun
 CGROUPS=disabled
-if [[ "$platform" == leap16 ]]; then
+if [[ "$platform" == leap16 || "$platform" == leap161 ]]; then
   PODMAN_GLOBAL+=(--cgroup-manager=cgroupfs)
   RUNTIME=runc
   CGROUPS=enabled
@@ -117,8 +117,8 @@ if client_get nv_native_source "http://$SERVER_IP:8080/" | grep -qx NATIVE_PORT_
 fi
 echo "PASS: direct bridge isolation"
 
-if [[ "$platform" == leap16 || "$platform" == fedora44 ]]; then
-  # Both ship pre-PR1483 Netavark. Confirm the stock bug rather than claiming
+if [[ "$platform" == leap16 || "$platform" == leap161 || "$platform" == fedora43 || "$platform" == fedora44 ]]; then
+  # These releases ship pre-PR1483 Netavark. Confirm the stock bug rather than claiming
   # success when no candidate RPM has been installed.
   if client_get nv_native_source "http://$HOST_IP:18091/" | grep -qx NATIVE_PORT_OK; then
     echo "FAIL: expected stock $platform IPv4 published-port isolation defect not reproduced" >&2

@@ -6,7 +6,9 @@ export PODMAN_COMPOSE_PROVIDER=/usr/bin/podman-compose
 MODE="${NETAVARK_COMPOSE_MODE:-fresh}"
 [[ "$MODE" == fresh || "$MODE" == upgrade ]] || exit 2
 if [[ -f /etc/fedora-release ]]; then
-  DISTRO=fedora44
+  DISTRO=fedora
+  FEDORA_RELEASE="$(rpm --eval '%{fedora}')"
+  [[ "$FEDORA_RELEASE" == 43 || "$FEDORA_RELEASE" == 44 ]] || { echo "Unsupported Fedora release" >&2; exit 1; }
   ARCH="$(rpm --eval '%{_arch}')"
   dnf -y install podman podman-compose netavark aardvark-dns \
     crun curl jq nftables iproute
@@ -32,13 +34,13 @@ runtime = "crun"
 compose_providers = ["/usr/bin/podman-compose"]
 EOF
 cat /etc/os-release
-if [[ "$DISTRO" == fedora44 ]]; then rpm -q podman netavark podman-compose; else dpkg-query -W podman netavark podman-compose; fi
+if [[ "$DISTRO" == fedora ]]; then rpm -q podman netavark podman-compose; else dpkg-query -W podman netavark podman-compose; fi
 podman info --format '{{.Host.NetworkBackend}}' | grep -Fx netavark
 podman compose version
 shopt -s nullglob
-if [[ "$DISTRO" == fedora44 ]]; then
-  RPMS=(/packages/netavark-1.17.2-1.xddd1.fc44."$ARCH".rpm)
-  [[ "${#RPMS[@]}" == 1 ]] || { echo "FAIL: missing patched Fedora 44 RPM" >&2; exit 1; }
+if [[ "$DISTRO" == fedora ]]; then
+  RPMS=(/packages/netavark-1.17.2-1.xddd1.fc"$FEDORA_RELEASE"."$ARCH".rpm)
+  [[ "${#RPMS[@]}" == 1 ]] || { echo "FAIL: missing patched Fedora $FEDORA_RELEASE RPM" >&2; exit 1; }
   install_candidate() { dnf -y install "${RPMS[0]}"; rpm -q netavark; }
 else
   DEBS=(/packages/netavark_*_"$ARCH".deb)

@@ -108,3 +108,15 @@ Netavark's existing nftables rules during a maintenance window.
 
 The `xddd` suffix is a downstream package marker; no Debian or Netavark
 upstream affiliation is claimed.
+### Fedora 43 and Leap 16.1 (2026-10-27)
+
+Fedora 43 and 44 are both built from their native Netavark 1.17.2 SRPMs
+with the PR #1483 patch. Both have AMD64/ARM64 source-RPM build and the
+same two-container Podman Compose IPv4/IPv6 pre-patch failure versus
+post-patch success regression. Fedora 43 is maintained only until EOL.
+
+Leap 16.1 joins Leap 16.0 for AMD64/ARM64 **stock** Podman network
+regression against `opensuse/leap:16.1`. Leap 16.1 uses Netavark 1.17.2,
+while 16.0 uses 1.14.1. The stock tests are not candidate RPM builds;
+a release-native openSUSE source RPM/OBS package and dual-stack A/B
+integration validation remain required. Upstream PR #1522 is excluded.
