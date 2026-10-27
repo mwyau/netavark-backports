@@ -46,7 +46,7 @@ jobs:
           test -f patches/1.16/0001-allow-published-ports-across-isolated-bridges.patch
           test -f patches/1.17/0001-allow-published-ports-across-isolated-bridges.patch
           test -f patches/2.0/0001-allow-published-ports-across-isolated-bridges.patch
-      - name: Build Debian source and package natively
+      - name: Build distribution-native source and package
         shell: bash
         run: |
           set -euo pipefail
@@ -96,13 +96,13 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --name "netavark-${{ matrix.suite }}-${{ matrix.arch }}" \
             --dir packages
-      - name: Baseline and patched network regression inside disposable containers
+      - name: Baseline, in-place upgrade, and patched network regression
         shell: bash
         run: |
           set -euo pipefail
           test -f packages/netavark_*_${{ matrix.arch }}.deb
           image="${{ matrix.suite == 'resolute' && 'ubuntu:resolute' || 'debian:trixie' }}"
-          for mode in baseline patched; do
+          for mode in baseline upgrade patched; do
             echo "=== ${{ matrix.suite }} / ${{ matrix.arch }} / $mode ==="
             docker run --rm --pull=always \
               --privileged --security-opt seccomp=unconfined \
@@ -159,7 +159,7 @@ jobs:
             --draft \
             --prerelease \
             --title "CI packages ${short} (experimental; review before deployment)" \
-            --notes "Unofficial Ubuntu/Debian Netavark backport. All ten packages built. Baseline and patched regression jobs passed for Debian Trixie and Ubuntu Resolute (amd64/arm64). Draft / unreviewed: inspect test coverage and rollback plan before deployment."
+            --notes "Unofficial Ubuntu/Debian Netavark backport. All ten packages built. Baseline, in-place upgrade, and patched regression jobs passed for Debian Trixie and Ubuntu Resolute (amd64/arm64). Draft / unreviewed: inspect test coverage and rollback plan before deployment."
           gh release upload "$tag" packages/netavark_*_amd64.deb packages/netavark_*_arm64.deb packages/SHA256SUMS-release \
             --repo "$GITHUB_REPOSITORY"
           gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json url,isDraft,assets
