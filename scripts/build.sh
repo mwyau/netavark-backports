@@ -71,7 +71,7 @@ quilt push "$PATCH_NAME"
 grep -Fq 'const DNAT_MASK: u32 = 0x1000;' src/firewall/nft.rs
 grep -Fq 'Mark only connections' src/firewall/nft.rs || grep -Fq 'Flag published-port DNAT' src/firewall/nft.rs
 
-export DEBFULLNAME="xddd Netavark Backport"
+export DEBFULLNAME="Albert Yau"
 export DEBEMAIL="albert@xddd.org"
 dch --no-conf --newversion "$VERSION" --distribution "$DIST" --force-distribution \
   "Backport Netavark published-port isolation fix from PR #1483."
