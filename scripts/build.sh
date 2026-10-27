@@ -71,9 +71,14 @@ grep -Fq 'const DNAT_MASK: u32 = 0x1000;' src/firewall/nft.rs
 grep -Fq 'Mark only connections' src/firewall/nft.rs || grep -Fq 'Flag published-port DNAT' src/firewall/nft.rs
 
 export DEBFULLNAME="xddd Netavark Backport"
-export DEBEMAIL="netavark-backport@localhost"
+export DEBEMAIL="albert@xddd.org"
 dch --no-conf --newversion "$VERSION" --distribution "$DIST" --force-distribution \
   "Backport Netavark published-port isolation fix from PR #1483."
+if [[ "$SUITE" == resolute ]]; then
+  # Launchpad PPAs accept signed source uploads, not CI-built binary .debs.
+  # Produce an unsigned _source.changes to sign on a trusted local machine.
+  dpkg-buildpackage -S -sa -us -uc
+fi
 export DEB_BUILD_OPTIONS="parallel=2"
 export CARGO_BUILD_JOBS=2
 dpkg-buildpackage --build=full --no-sign -j2
@@ -82,6 +87,7 @@ cd ..
 shopt -s nullglob
 OUT="/work/dist/$SUITE/$ARCH"
 files=("netavark_${VERSION}_${ARCH}.deb" "netavark_${VERSION}.dsc"
+  "netavark_${VERSION}_source.changes"
   "netavark_${VERSION}.debian.tar."* "netavark_"*.orig.tar.*
   "netavark_${VERSION}_${ARCH}.buildinfo" "netavark_${VERSION}_${ARCH}.changes")
 for file in "${files[@]}"; do [[ ! -f "$file" ]] || cp "$file" "$OUT/"; done
