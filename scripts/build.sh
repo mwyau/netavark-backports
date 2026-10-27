@@ -6,17 +6,18 @@ REVISION="${REVISION:-1}"
 [[ "$REVISION" =~ ^[1-9][0-9]*$ ]] || exit 2
 ARCH="$(dpkg --print-architecture)"
 [[ "$ARCH" == "$EXPECTED_ARCH" ]] || { echo "Architecture mismatch: $ARCH vs $EXPECTED_ARCH" >&2; exit 2; }
+# Keep the minimum native revision and expected patch-family independently.
+# An official +deb13u1 / +ubuntuN security upload must become the NEW base.
 case "$SUITE" in
-  trixie) BASE=1.14.0-2; FAMILY=1.14; DIST=trixie ;;
-  resolute) BASE=1.16.1-3.1; FAMILY=1.16; DIST=resolute ;;
-  stonking) BASE=1.17.2-2; FAMILY=1.17; DIST=stonking ;;
-  forky) BASE=1.17.2-3; FAMILY=1.17; DIST=forky ;;
-  sid) BASE=1.17.2-3; FAMILY=1.17; DIST=sid ;;
-  experimental) BASE=2.0.0-1; FAMILY=2.0; DIST=sid ;;
+  trixie) MINIMUM=1.14.0-2; FAMILY=1.14; DIST=trixie ;;
+  resolute) MINIMUM=1.16.1-3.1; FAMILY=1.16; DIST=resolute ;;
+  stonking) MINIMUM=1.17.2-2; FAMILY=1.17; DIST=stonking ;;
+  forky) MINIMUM=1.17.2-3; FAMILY=1.17; DIST=forky ;;
+  sid) MINIMUM=1.17.2-3; FAMILY=1.17; DIST=sid ;;
+  experimental) MINIMUM=2.0.0-1; FAMILY=2.0; DIST=sid ;;
   *) echo "Unsupported suite: $SUITE" >&2; exit 2 ;;
 esac
-VERSION="$BASE+0xddd$REVISION~$SUITE"
-dpkg --compare-versions "$VERSION" gt "$BASE"
+source /work/scripts/deb-version.sh
 export DEBIAN_FRONTEND=noninteractive
 if [[ "$SUITE" == experimental ]]; then
   cat >/etc/apt/sources.list.d/netavark-source.sources <<'EOF'
@@ -36,7 +37,7 @@ elif [[ "$SUITE" == resolute || "$SUITE" == stonking ]]; then
   cat >/etc/apt/sources.list.d/netavark-source.sources <<EOF
 Types: deb-src
 URIs: $UBUNTU_ARCHIVE
-Suites: $SUITE
+Suites: $SUITE ${SUITE}-updates ${SUITE}-security
 Components: main universe
 Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
 EOF
@@ -48,10 +49,47 @@ Suites: $SUITE
 Components: main
 Signed-By: /usr/share/keyrings/debian-archive-keyring.pgp
 EOF
+  if [[ "$SUITE" == trixie ]]; then
+    cat >/etc/apt/sources.list.d/netavark-trixie-security.sources <<'EOF'
+Types: deb-src
+URIs: http://security.debian.org/debian-security
+Suites: trixie-security
+Components: main
+Signed-By: /usr/share/keyrings/debian-archive-keyring.pgp
+EOF
+    cat >/etc/apt/sources.list.d/netavark-trixie-updates.sources <<'EOF'
+Types: deb-src
+URIs: http://deb.debian.org/debian
+Suites: trixie-updates
+Components: main
+Signed-By: /usr/share/keyrings/debian-archive-keyring.pgp
+EOF
+  fi
 fi
 
 apt-get update
 apt-get install -y --no-install-recommends ca-certificates dpkg-dev devscripts fakeroot quilt python3
+# Resolve the highest available NATIVE source revision across release,
+# security and updates pockets. Do not silently remain based on stale -2.
+BASE=""
+while IFS= read -r candidate; do
+  [[ -n "$candidate" ]] || continue
+  if [[ -z "$BASE" ]] || dpkg --compare-versions "$candidate" gt "$BASE"; then
+    BASE="$candidate"
+  fi
+done < <(apt-cache showsrc netavark | awk '/^Version: / {print $2}' | sort -u)
+[[ -n "$BASE" ]] || { echo "FAIL: no distribution Netavark source"; exit 1; }
+dpkg --compare-versions "$BASE" ge "$MINIMUM" || {
+  echo "FAIL: distro Netavark $BASE older than required $MINIMUM" >&2; exit 1;
+}
+ACTUAL_FAMILY="$(netavark_source_family "$BASE")"
+[[ "$ACTUAL_FAMILY" == "$FAMILY" ]] || {
+  echo "FAIL: native Netavark $BASE changed patch family $FAMILY -> $ACTUAL_FAMILY" >&2
+  exit 1
+}
+netavark_check_source_available "$BASE"
+VERSION="$(netavark_downstream_version "$BASE" "$REVISION" "$SUITE")"
+printf 'Selecting native source %s (%s) -> candidate %s\n' "$BASE" "$FAMILY" "$VERSION"
 apt-get build-dep -y "netavark=$BASE"
 
 mkdir -p "/work/build/$SUITE/$ARCH" "/work/dist/$SUITE/$ARCH"
