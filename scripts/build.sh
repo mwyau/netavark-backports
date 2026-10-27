@@ -61,6 +61,117 @@ DIR="$(find . -maxdepth 1 -mindepth 1 -type d -name 'netavark-*' -print -quit)"
 [[ -n "$DIR" ]] || { echo "Missing extracted Debian source" >&2; exit 1; }
 cd "$DIR"
 [[ "$(dpkg-parsechangelog -SVersion)" == "$BASE" ]] || { echo "Source version changed" >&2; exit 1; }
+# Ubuntu Stonking carries Debian's obsolete downgrade to prost 0.12.6,
+# but its current Cargo registry offers only prost 0.14.4. Upstream Netavark
+# 1.17.2 already requires prost 0.14.1 / tonic 0.14.2; Debian 1.17.2-3
+# resolved Debian bug #1145651 by removing this obsolete distribution patch.
+# Reapply all the other native Ubuntu patches, leaving original Cargo.toml
+# dependencies intact. Never rewrite or loosen upstream Cargo dependencies.
+if [[ "$SUITE" == stonking ]]; then
+  printf '%s\n' "=== Drop obsolete Ubuntu prost 0.12 quilt downgrade ==="
+  test -f debian/patches/0013-compile-against-prost-12.6.patch
+  grep -Fxq 0013-compile-against-prost-12.6.patch debian/patches/series
+  quilt pop -a
+  sed -i '/^0013-compile-against-prost-12\.6\.patch$/d' debian/patches/series
+  quilt push -a
+  grep -Eq '^prost = "0\.14\.1"
+export QUILT_PATCHES=debian/patches
+PATCH_NAME=9999-allow-cross-bridge-published-ports.patch
+cp "/work/patches/$FAMILY/0001-allow-published-ports-across-isolated-bridges.patch" "debian/patches/$PATCH_NAME"
+printf '%s\n' "$PATCH_NAME" >> debian/patches/series
+quilt push "$PATCH_NAME"
+grep -Fq 'const DNAT_MASK: u32 = 0x1000;' src/firewall/nft.rs
+grep -Fq 'Ensure we allow the DNAT packets before we consult the isolation chains' src/firewall/nft.rs
+grep -Fq 'let isolation_handle = get_matching_rules_in_chain(' src/firewall/nft.rs
+
+export DEBFULLNAME="Albert Yau"
+export DEBEMAIL="albert@xddd.org"
+dch --no-conf --newversion "$VERSION" --distribution "$DIST" --force-distribution \
+  "Backport Netavark published-port isolation fix from PR #1483."
+if [[ "$SUITE" == resolute || "$SUITE" == stonking ]]; then
+  # Launchpad PPAs accept signed source uploads, not CI-built binary .debs.
+  # Produce an unsigned _source.changes to sign on a trusted local machine.
+  dpkg-buildpackage -S -sa -us -uc
+fi
+export DEB_BUILD_OPTIONS="parallel=2"
+export CARGO_BUILD_JOBS=2
+dpkg-buildpackage --build=full --no-sign -j2
+
+cd ..
+shopt -s nullglob
+OUT="/work/dist/$SUITE/$ARCH"
+files=("netavark_${VERSION}_${ARCH}.deb" "netavark_${VERSION}.dsc"
+  "netavark_${VERSION}_source.changes"
+  "netavark_${VERSION}.debian.tar."* "netavark_"*.orig.tar.*
+  "netavark_${VERSION}_${ARCH}.buildinfo" "netavark_${VERSION}_${ARCH}.changes")
+for file in "${files[@]}"; do [[ ! -f "$file" ]] || cp "$file" "$OUT/"; done
+[[ -f "$OUT/netavark_${VERSION}_${ARCH}.deb" ]] || { echo "Missing built .deb" >&2; exit 1; }
+# Validate the binary package metadata and execute the packaged binary.
+DEB="$OUT/netavark_${VERSION}_${ARCH}.deb"
+[[ "$(dpkg-deb --field "$DEB" Package)" == "netavark" ]]
+[[ "$(dpkg-deb --field "$DEB" Version)" == "$VERSION" ]]
+[[ "$(dpkg-deb --field "$DEB" Architecture)" == "$ARCH" ]]
+TMP_BIN="$(mktemp -d)"
+trap 'rm -rf "$TMP_BIN"' EXIT
+dpkg-deb --extract "$DEB" "$TMP_BIN"
+BIN="$(find "$TMP_BIN" -type f -name netavark -perm /111 -print -quit)"
+[[ -n "$BIN" ]] || { echo "Netavark binary missing in deb" >&2; exit 1; }
+"$BIN" --version | grep -F 'netavark'
+(cd "$OUT"; sha256sum -- * > SHA256SUMS)
+ls -lh "$OUT"
+ Cargo.toml || {
+    echo "FAIL: unexpected Netavark 1.17.2 prost requirement" >&2; exit 1;
+  }
+  grep -Eq '^tonic = "0\.14\.2"
+export QUILT_PATCHES=debian/patches
+PATCH_NAME=9999-allow-cross-bridge-published-ports.patch
+cp "/work/patches/$FAMILY/0001-allow-published-ports-across-isolated-bridges.patch" "debian/patches/$PATCH_NAME"
+printf '%s\n' "$PATCH_NAME" >> debian/patches/series
+quilt push "$PATCH_NAME"
+grep -Fq 'const DNAT_MASK: u32 = 0x1000;' src/firewall/nft.rs
+grep -Fq 'Ensure we allow the DNAT packets before we consult the isolation chains' src/firewall/nft.rs
+grep -Fq 'let isolation_handle = get_matching_rules_in_chain(' src/firewall/nft.rs
+
+export DEBFULLNAME="Albert Yau"
+export DEBEMAIL="albert@xddd.org"
+dch --no-conf --newversion "$VERSION" --distribution "$DIST" --force-distribution \
+  "Backport Netavark published-port isolation fix from PR #1483."
+if [[ "$SUITE" == resolute || "$SUITE" == stonking ]]; then
+  # Launchpad PPAs accept signed source uploads, not CI-built binary .debs.
+  # Produce an unsigned _source.changes to sign on a trusted local machine.
+  dpkg-buildpackage -S -sa -us -uc
+fi
+export DEB_BUILD_OPTIONS="parallel=2"
+export CARGO_BUILD_JOBS=2
+dpkg-buildpackage --build=full --no-sign -j2
+
+cd ..
+shopt -s nullglob
+OUT="/work/dist/$SUITE/$ARCH"
+files=("netavark_${VERSION}_${ARCH}.deb" "netavark_${VERSION}.dsc"
+  "netavark_${VERSION}_source.changes"
+  "netavark_${VERSION}.debian.tar."* "netavark_"*.orig.tar.*
+  "netavark_${VERSION}_${ARCH}.buildinfo" "netavark_${VERSION}_${ARCH}.changes")
+for file in "${files[@]}"; do [[ ! -f "$file" ]] || cp "$file" "$OUT/"; done
+[[ -f "$OUT/netavark_${VERSION}_${ARCH}.deb" ]] || { echo "Missing built .deb" >&2; exit 1; }
+# Validate the binary package metadata and execute the packaged binary.
+DEB="$OUT/netavark_${VERSION}_${ARCH}.deb"
+[[ "$(dpkg-deb --field "$DEB" Package)" == "netavark" ]]
+[[ "$(dpkg-deb --field "$DEB" Version)" == "$VERSION" ]]
+[[ "$(dpkg-deb --field "$DEB" Architecture)" == "$ARCH" ]]
+TMP_BIN="$(mktemp -d)"
+trap 'rm -rf "$TMP_BIN"' EXIT
+dpkg-deb --extract "$DEB" "$TMP_BIN"
+BIN="$(find "$TMP_BIN" -type f -name netavark -perm /111 -print -quit)"
+[[ -n "$BIN" ]] || { echo "Netavark binary missing in deb" >&2; exit 1; }
+"$BIN" --version | grep -F 'netavark'
+(cd "$OUT"; sha256sum -- * > SHA256SUMS)
+ls -lh "$OUT"
+ Cargo.toml || {
+    echo "FAIL: unexpected Netavark 1.17.2 tonic requirement" >&2; exit 1;
+  }
+fi
+
 # Apply the version-specific, reviewed unified-diff patch with Debian quilt.
 # No Python rewriting of upstream source is performed during the package build.
 export QUILT_PATCHES=debian/patches
