@@ -26,9 +26,16 @@ source_version="$(rpm -q --define 'default_firewall_backend nftables' --specfile
 python3 /work/scripts/check-source-lock.py opensuse "$LEAP_VERSION" "$source_version"
 native_release="$(rpm -q --define 'default_firewall_backend nftables' --specfile --qf '%{RELEASE}\n' "$spec" | head -n1)"
 [[ -n "$native_release" && "$native_release" != "(none)" ]] || exit 1
-grep -Eq '^%autosetup|^%autopatch' "$spec" || {
+grep -Eq '^%autosetup([[:space:]]|$)' "$spec" || {
   echo "Unknown native SPEC patch application; needs review" >&2; exit 1;
 }
+# Native Leap uses %autosetup -a1; the reviewed unified diff has a/ and b/
+# prefixes, which require -p1. Existing native patches must be checked too.
+if grep -Eq '^Patch[0-9]+:' "$spec"; then
+  echo "Existing native patch series requires manual review before changing strip level" >&2
+  exit 1
+fi
+sed -i '/^%autosetup[[:space:]]/s/^%autosetup /%autosetup -p1 /' "$spec"
 grep -Eq '^Release:[[:space:]]*' "$spec" || exit 1
 [[ "$native_release" != *xddd* ]] || exit 1
 cp "/work/patches/$FAMILY/0001-allow-published-ports-across-isolated-bridges.patch" \
