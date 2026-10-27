@@ -87,6 +87,14 @@ ACTUAL_FAMILY="$(netavark_source_family "$BASE")"
   echo "FAIL: native Netavark $BASE changed patch family $FAMILY -> $ACTUAL_FAMILY" >&2
   exit 1
 }
+# Fail if the distribution binary security candidate is newer than our
+# matching source index. Never unknowingly repackage a stale source.
+BINARY_CANDIDATE="$(apt-cache policy netavark | awk '/Candidate:/ {print $2; exit}')"
+if [[ -n "$BINARY_CANDIDATE" && "$BINARY_CANDIDATE" != "(none)" ]] &&
+   dpkg --compare-versions "$BASE" lt "$BINARY_CANDIDATE"; then
+  echo "FAIL: native binary $BINARY_CANDIDATE is newer than source $BASE" >&2
+  exit 1
+fi
 netavark_check_source_available "$BASE"
 VERSION="$(netavark_downstream_version "$BASE" "$REVISION" "$SUITE")"
 printf 'Selecting native source %s (%s) -> candidate %s\n' "$BASE" "$FAMILY" "$VERSION"
@@ -104,15 +112,27 @@ cd "$DIR"
 # Debian fixed the same problem in netavark 1.17.2-3 (bug #1145651)
 # by dropping obsolete prost 0.12 and mozim 3 patches.
 if [[ "$SUITE" == stonking ]]; then
-  echo "=== Removing obsolete Ubuntu prost 0.12 quilt patch ==="
-  export QUILT_PATCHES=debian/patches
-  test -f debian/patches/0013-compile-against-prost-12.6.patch
-  test -f debian/patches/0005-Compile-against-mozim-3.patch
-  grep -Fxq '0013-compile-against-prost-12.6.patch' debian/patches/series
-  grep -Fxq '0005-Compile-against-mozim-3.patch' debian/patches/series
-  quilt pop -a
-  sed -i '/^0013-compile-against-prost-12[.]6[.]patch$/d; /^0005-Compile-against-mozim-3[.]patch$/d' debian/patches/series
-  quilt push -a
+  # New distro updates may already have removed these old compatibility
+  # patches. Accept either BOTH (remove and reapply remaining series) or
+  # NEITHER. One without the other needs manual packaging review.
+  prost_patch=0013-compile-against-prost-12.6.patch
+  mozim_patch=0005-Compile-against-mozim-3.patch
+  have_prost=0
+  have_mozim=0
+  grep -Fxq "$prost_patch" debian/patches/series && have_prost=1
+  grep -Fxq "$mozim_patch" debian/patches/series && have_mozim=1
+  [[ "$have_prost" == "$have_mozim" ]] || {
+    echo "FAIL: changed native Ubuntu quilt series; review required" >&2; exit 1;
+  }
+  if [[ "$have_prost" == 1 ]]; then
+    echo "=== Drop obsolete Ubuntu prost 0.12 / mozim 3 downgrade patches ==="
+    test -f "debian/patches/$prost_patch"
+    test -f "debian/patches/$mozim_patch"
+    export QUILT_PATCHES=debian/patches
+    quilt pop -a
+    sed -i '/^0013-compile-against-prost-12[.]6[.]patch$/d; /^0005-Compile-against-mozim-3[.]patch$/d' debian/patches/series
+    quilt push -a
+  fi
   grep -Fq 'prost = "0.14.1"' Cargo.toml || {
     echo "FAIL: unexpected Netavark 1.17.2 prost dependency"; exit 1;
   }
