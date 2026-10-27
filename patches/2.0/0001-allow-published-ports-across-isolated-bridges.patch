@@ -2,36 +2,49 @@ Description: Backport published port access across isolated bridges
  Preserve Netavark's DNAT destination markings so forwarded published-port
  traffic is accepted before inter-bridge isolation is enforced.
 Origin: backport, https://github.com/containers/netavark/pull/1483
+Backported-by: Albert Yau <albert@xddd.org>
+Comment: Preserve upstream match, DNAT mark, and acceptance logic as closely as
+ possible. Only adjust version-specific API and insert before an existing
+ isolation jump when upgrading live networks (upstream assumes fresh setup).
 Bug: https://github.com/containers/netavark/issues/709
 Forwarded: not-needed
-Last-Update: 2026-10-26
+Last-Update: 2026-10-27
 
 --- a/src/firewall/nft.rs
 +++ b/src/firewall/nft.rs
-@@ -32,6 +32,7 @@
+@@ -32,6 +32,8 @@
  pub(crate) const MAX_HASH_SIZE: usize = 13;
  
++const CT_MARK_NAME: Cow<'_, str> = Cow::Borrowed("mark");
  const MASK: u32 = 0x2000;
 +const DNAT_MASK: u32 = 0x1000;
  
  const MULTICAST_NET_V4: &str = "224.0.0.0/4";
  const MULTICAST_NET_V6: &str = "ff00::/8";
-@@ -252,6 +253,56 @@
+@@ -252,6 +254,64 @@
              ));
          }
  
-+        // Accept DNAT published ports before inter-bridge isolation (PR #1483).
-+        let match_dnat_mark = |r: &schema::Rule| -> bool {
++        let match_dnat_mask = |r: &schema::Rule| -> bool {
++            // Match on any rule that matches against DNAT_MASK
 +            for statement in r.expr.deref() {
-+                if let stmt::Statement::Match(m) = statement {
-+                    if matches!(&m.right, expr::Expression::Number(n) if *n == DNAT_MASK) {
-+                        return true;
-+                    }
++                match statement {
++                    stmt::Statement::Match(m) => match &m.right {
++                        expr::Expression::Number(n) => {
++                            if *n == DNAT_MASK {
++                                return true;
++                            }
++                        }
++                        _ => continue,
++                    },
++                    _ => continue,
 +                }
 +            }
 +            false
 +        };
-+        if get_matching_rules_in_chain(&existing_rules, FORWARDCHAIN, match_dnat_mark).is_empty() {
++        if get_matching_rules_in_chain(&existing_rules, FORWARDCHAIN, match_dnat_mask).is_empty() {
++            // Ensure we allow the DNAT packets before we consult the isolation chains
++            // Forward: ct mark & 0x1000 == 0x1000 accept
 +            let mut accept_rule = make_rule(
 +                Cow::Borrowed(FORWARDCHAIN),
 +                Cow::Owned(vec![
@@ -39,7 +52,7 @@ Last-Update: 2026-10-26
 +                        left: expr::Expression::BinaryOperation(Box::new(
 +                            expr::BinaryOperation::AND(
 +                                expr::Expression::Named(expr::NamedExpression::CT(expr::CT {
-+                                    key: Cow::Borrowed("mark"),
++                                    key: CT_MARK_NAME,
 +                                    family: None,
 +                                    dir: None,
 +                                })),
@@ -73,14 +86,13 @@ Last-Update: 2026-10-26
          // Forward chain: jump NETAVARK-ISOLATION-1
          if get_matching_rules_in_chain(
              &existing_rules,
-@@ -1039,6 +1090,20 @@
+@@ -1039,6 +1099,19 @@
              right: expr::Expression::Number(host_port),
              op: stmt::Operator::EQ,
          }));
-+        // Flag published-port DNAT to bypass bridge isolation in FORWARD.
 +        statements.push(stmt::Statement::Mangle(stmt::Mangle {
 +            key: expr::Expression::Named(expr::NamedExpression::CT(expr::CT {
-+                key: Cow::Borrowed("mark"),
++                key: CT_MARK_NAME,
 +                family: None,
 +                dir: None,
 +            })),
