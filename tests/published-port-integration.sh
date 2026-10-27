@@ -37,7 +37,23 @@ podman network create --subnet 10.241.21.0/24 --opt isolate=true nv_source
 podman network create --subnet 10.241.22.0/24 --opt isolate=true nv_target
 podman run --cgroups=disabled -d --name nv_server --network nv_target \
   -p 0.0.0.0:18081:8080 docker.io/library/alpine:3.20 \
-  sh -c 'mkdir -p /www; echo PUBLISHED_PORT_OK >/www/index.html; busybox httpd -f -p 8080 -h /www'
+  sh -c 'set -eu; mkdir -p /www; echo PUBLISHED_PORT_OK >/www/index.html; exec busybox httpd -f -p 8080 -h /www'
+
+# Confirm the service actually stays alive.  Without this, a failure from
+# `podman exec` obscures the server's exit code and logs.
+for attempt in $(seq 1 10); do
+  if [[ "$(podman inspect nv_server --format '{{.State.Running}}')" == true ]]; then
+    break
+  fi
+  sleep 1
+done
+if [[ "$(podman inspect nv_server --format '{{.State.Running}}')" != true ]]; then
+  echo 'FAIL: nv_server exited before the published-port test' >&2
+  podman ps -a --filter name=nv_server
+  podman inspect nv_server --format 'status={{.State.Status}} exit={{.State.ExitCode}} error={{.State.Error}}'
+  podman logs nv_server || true
+  exit 1
+fi
 
 # Verify the patched accept rule is evaluated before bridge isolation.
 forward_rules="$(nft list chain inet netavark FORWARD)"
@@ -54,7 +70,12 @@ nft list ruleset | grep -E "ct mark set.*0x00001000.*dnat"
 HOST_IP="$(ip -4 -o addr show dev eth0 | awk '{split($4, a, "/"); print a[1]; exit}')"
 [[ -n "$HOST_IP" ]] || { echo "Missing host eth0 IPv4 address" >&2; exit 1; }
 echo "Testing published host port at $HOST_IP:18081"
-podman exec nv_server wget -q -T 5 -O- http://127.0.0.1:8080/ | grep -q "^PUBLISHED_PORT_OK$"
+if ! podman exec nv_server wget -q -T 5 -O- http://127.0.0.1:8080/ | grep -q "^PUBLISHED_PORT_OK$"; then
+  echo "FAIL: server local smoke test failed" >&2
+  podman inspect nv_server --format 'status={{.State.Status}} exit={{.State.ExitCode}} error={{.State.Error}}'
+  podman logs nv_server || true
+  exit 1
+fi
 
 for attempt in 1 2 3 4 5; do
   if podman run --cgroups=disabled --rm --network nv_source docker.io/library/alpine:3.20 \
