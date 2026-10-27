@@ -39,6 +39,7 @@ jobs:
       - name: Validate build scripts
         run: |
           bash -n scripts/build.sh
+          bash -n tests/published-port-integration.sh
           test -f patches/1.14/0001-allow-published-ports-across-isolated-bridges.patch
           test -f patches/1.17/0001-allow-published-ports-across-isolated-bridges.patch
           test -f patches/2.0/0001-allow-published-ports-across-isolated-bridges.patch
