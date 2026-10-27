@@ -16,12 +16,15 @@ Release is gated on runtime regression tests, including in-place upgrades with a
 |---|---|---|---|---|
 | Debian trixie | 1.14.0-2 | 1.14 | amd64 / arm64 | Candidate |
 | Ubuntu resolute (26.04 LTS) | 1.16.1-3.1 | 1.16 | amd64 / arm64 | Candidate |
+| Ubuntu stonking (26.10 interim) | 1.17.2-2 | 1.17 | amd64 / arm64 | Candidate |
+| Ubuntu noble (24.04 LTS) | 1.4.0-4 | 1.4, no nftables driver | amd64 / arm64 | Stock-network compatibility tests; no PR #1483 patch |
+| Ubuntu jammy (22.04 LTS) | no native Netavark source | Podman 3.4/CNI | amd64 / arm64 | Stock-network compatibility tests; no backport |
 | Debian forky | 1.17.2-3 | 1.17 | amd64 / arm64 | Candidate |
 | Debian sid | 1.17.2-3 | 1.17 | amd64 / arm64 | Candidate |
 | Debian experimental | 2.0.0-1 | 2.0 | amd64 / arm64 | Experimental (allowed failure in CI) |
 
 The script **fails closed** if the distribution source version changes or the source
-code no longer matches the expected patch anchors. Debian Bookworm and Ubuntu Noble (24.04 LTS, Netavark 1.4) require separate ports and are not currently supported. Experimental uses Sid as a base with Debian experimental enabled;
+code no longer matches the expected patch anchors. Debian Bookworm remains unsupported. All four standard-supported Ubuntu releases are included in the CI coverage matrix. Only Resolute and Stonking can directly use the nftables PR #1483 backport: Noble 1.4 predates Netavark's nftables driver, and Jammy does not package Netavark. Noble/Jammy compatibility testing is not equivalent to delivering a backport package. Ubuntu Pro/ESM releases are not included in this standard-support matrix. Experimental uses Sid as a base with Debian experimental enabled;
 **Netavark 2.x requires Podman 6.x** and is not appropriate for Podman 5.4.2.
 
 ### Versioning
@@ -43,13 +46,13 @@ The build copies the matching patch into `debian/patches`, adds it to the
 
 ### Verification
 
-All ten suite/architecture combinations build distribution-native packages and validate
-the resulting `.deb` metadata and packaged binary's `--version`. Privileged CI runtime checks on **Debian Trixie and Ubuntu Resolute, amd64 and arm64**
+All twelve package-building suite/architecture combinations build distribution-native packages and validate
+the resulting `.deb` metadata and packaged binary's `--version`. Privileged CI runtime checks on **Debian Trixie, Ubuntu Resolute and Stonking, amd64 and arm64**
 exercise the stock distribution package, an **in-place upgrade with active
 containers**, and a patched install on freshly created networks. They verify
 same-bridge DNS/TCP, host port publishing, direct bridge isolation, and
 cross-isolated-bridge access to published host ports. These tests must pass before
-creating a draft release.
+creating a draft release. Separate privileged stock-Podman smoke tests run on Jammy and Noble on both architectures. They never install an incompatible Netavark backport.
 
 The Debian `dh_auto_test` step in the initial successful run invoked a Cargo
 build, **not the Rust unit-test suite**; additional unit-test coverage is still
@@ -68,7 +71,9 @@ docker run --rm --pull=always -v "$PWD:/work" -w /work \
 
 `EXPECTED_ARCH` must match the actual container architecture. For x86-64, use
 `amd64`; for experimental, use `debian:sid` and `SUITE=experimental`.
-Artifacts appear under `dist/<suite>/<arch>/` with `.deb`, `.dsc`, Debian
+Ubuntu 26.04 and 26.10 use `ubuntu:resolute` or `ubuntu:stonking` with the
+corresponding `SUITE`. Neither Jammy nor Noble should receive these builds.
+Artifacts appear under `dist/<suite>/<arch>/` with `.deb`, `.dsc`, Debian/Ubuntu
 source components, build records, and checksums. Building does not touch host
 networking or replace installed packages.
 
@@ -76,10 +81,10 @@ networking or replace installed packages.
 
 GitHub Actions artifacts are ZIP archives, even when an artifact contains a
 single `.deb`. After every successful main-branch build matrix, a separate CI
-job collects the ten `.deb` files and attaches them **directly as raw release
+job collects the twelve `.deb` files and attaches them **directly as raw release
 assets**, plus `SHA256SUMS-release`, to a **draft prerelease**
 tagged `ci-<commit>`. A draft is not published as a final release. Its notes
-include the actual integration-job result (success or failure).
+are created only when all required patched and legacy compatibility checks succeed.
 
 See [PUBLISHING.md](PUBLISHING.md) for the proposed Ubuntu PPA (`xddd` if
 available), the signed Debian APT archive at `https://apt.xddd.org`, and release
