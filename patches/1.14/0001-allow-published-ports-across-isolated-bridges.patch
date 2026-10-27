@@ -16,7 +16,7 @@ Last-Update: 2026-10-26
  
  /// The dnat priority for chains
  /// This (and the below) are based on https://wiki.nftables.org/wiki-nftables/index.php/Netfilter_hooks#Priority_within_hook
-@@ -239,6 +240,37 @@
+@@ -239,6 +240,54 @@
              ));
          }
  
@@ -32,7 +32,7 @@ Last-Update: 2026-10-26
 +            false
 +        };
 +        if get_matching_rules_in_chain(&existing_rules, FORWARDCHAIN, match_dnat_mark).is_empty() {
-+            batch.add(make_rule(
++            let mut accept_rule = make_rule(
 +                FORWARDCHAIN,
 +                vec![
 +                    stmt::Statement::Match(stmt::Match {
@@ -49,12 +49,29 @@ Last-Update: 2026-10-26
 +                    }),
 +                    stmt::Statement::Accept(None),
 +                ],
-+            ));
++            );
++            // On an existing network, add before its isolation jump (not at chain tail).
++            let isolation_handle = get_matching_rules_in_chain(
++                &existing_rules,
++                FORWARDCHAIN,
++                get_rule_matcher_jump_to(ISOLATION1CHAIN.to_string()),
++            )
++            .first()
++            .and_then(|r| r.handle);
++            if let Some(handle) = isolation_handle {
++                if let schema::NfListObject::Rule(rule) = &mut accept_rule {
++                    rule.handle = Some(handle);
++                }
++                batch.add_cmd(schema::NfCmd::Insert(accept_rule));
++            } else {
++                // For a new network, the isolation jump is added below this rule.
++                batch.add(accept_rule);
++            }
 +        }
          // Forward chain: jump NETAVARK-ISOLATION-1
          if get_matching_rules_in_chain(
              &existing_rules,
-@@ -946,6 +978,20 @@
+@@ -946,6 +995,20 @@
              right: expr::Expression::Number(host_port),
              op: stmt::Operator::EQ,
          }));
