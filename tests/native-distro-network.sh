@@ -6,18 +6,20 @@ export NETAVARK_FW=nftables
 platform="${TEST_PLATFORM:?Set arch, tumbleweed or leap16}"
 case "$platform" in
   arch)
-    pacman -Syu --noconfirm --needed podman netavark aardvark-dns nftables iproute2 curl jq
+    pacman -Syu --noconfirm --needed podman netavark aardvark-dns nftables iproute2 curl jq crun
     ;;
   tumbleweed|leap16)
     zypper --non-interactive --gpg-auto-import-keys refresh
     zypper --non-interactive install --no-recommends \
-      podman netavark aardvark-dns nftables iproute2 curl jq
+      podman netavark aardvark-dns nftables iproute2 curl jq crun
     ;;
   *) echo "Unknown test platform: $platform" >&2; exit 2 ;;
 esac
 cat /etc/os-release
-echo "Native Netavark:"; /usr/libexec/podman/netavark --version || netavark --version
-podman info --format '{{.Host.NetworkBackend}}' | grep -Fx netavark
+echo "Native Netavark:"
+netavark_bin="$(find /usr/lib /usr/libexec /usr/bin -type f -name netavark -perm /111 -print -quit 2>/dev/null)"
+[[ -n "$netavark_bin" ]] || { echo "FAIL: Netavark executable missing after installation" >&2; exit 1; }
+"$netavark_bin" --version
 mkdir -p /etc/containers
 cat >/etc/containers/storage.conf <<'EOF'
 [storage]
@@ -25,6 +27,9 @@ driver = "vfs"
 runroot = "/run/containers/storage"
 graphroot = "/var/lib/containers/storage"
 EOF
+# Initialize Podman only after setting the storage driver, avoiding persistent
+# graph-driver mismatches on distributions that initialize their database early.
+podman info --format '{{.Host.NetworkBackend}}' | grep -Fx netavark
 cleanup() {
   podman rm -f nv_native_server >/dev/null 2>&1 || :
   podman network rm nv_native_source nv_native_target >/dev/null 2>&1 || :
@@ -39,7 +44,7 @@ trap 'rc=$?; (( rc == 0 )) || diagnostics' ERR
 
 podman network create --subnet 10.242.31.0/24 --opt isolate=true nv_native_source
 podman network create --subnet 10.242.32.0/24 --opt isolate=true nv_native_target
-podman run --cgroups=disabled -d --name nv_native_server --network nv_native_target \
+podman run --runtime crun --cgroups=disabled -d --name nv_native_server --network nv_native_target \
   -p 0.0.0.0:18091:8080 docker.io/library/python:3.12-alpine \
   sh -c 'set -eu; mkdir -p /www; echo NATIVE_PORT_OK >/www/index.html; exec python3 -m http.server 8080 --bind 0.0.0.0 --directory /www'
 
@@ -57,7 +62,7 @@ done
 echo "PASS: HTTP service ready"
 
 client_get() {
-  podman run --cgroups=disabled --rm --network "$1" \
+  podman run --runtime crun --cgroups=disabled --rm --network "$1" \
     docker.io/library/alpine:3.20 wget -q -T 5 -O- "$2"
 }
 client_get nv_native_target http://nv_native_server:8080/ | grep -qx NATIVE_PORT_OK || {
