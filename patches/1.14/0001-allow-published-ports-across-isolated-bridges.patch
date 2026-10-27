@@ -1,10 +1,9 @@
-Description: Allow published ports to be reached across isolated bridges
-Bug: https://github.com/containers/netavark/issues/709
+Description: Allow published ports across isolated bridges
 Origin: backport, https://github.com/containers/netavark/pull/1483
+Bug: https://github.com/containers/netavark/issues/709
+Applied-Upstream: commit:a164ceac9129a23a466a79ad6f9ea249c626a0c8
 Backported-by: Albert Yau <albert@xddd.org>
-Forwarded: not-needed
 Last-Update: 2026-10-27
-
 --- a/src/firewall/nft.rs
 +++ b/src/firewall/nft.rs
 @@ -28,6 +28,7 @@

@@ -90,6 +90,8 @@ jobs:
     if: needs.validate.result == 'success'
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 180
+    # Leap is experimental until native backport builds and dual-stack tests pass.
+    continue-on-error: ${{ startsWith(matrix.platform, 'leap') }}
     permissions:
       contents: read
     strategy:
@@ -108,7 +110,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - name: Fedora native SRPM build and tests, or Leap stock test
+      - name: Native Fedora/openSUSE source RPM build and IPv4/IPv6 tests
         env:
           GH_TOKEN: ${{ github.token }}
           RPM_PLATFORM: ${{ matrix.platform }}
@@ -123,6 +125,20 @@ jobs:
           path: dist/${{ matrix.platform }}/${{ matrix.arch }}/source/netavark-*.src.rpm
           if-no-files-found: error
           retention-days: 30
+      - name: Upload patched Leap source RPM
+        if: success() && startsWith(matrix.platform, 'leap') && matrix.arch == 'x86_64'
+        uses: actions/upload-artifact@v7
+        with:
+          archive: false
+          path: dist/${{ matrix.platform }}/${{ matrix.arch }}/source/netavark-*.src.rpm
+          if-no-files-found: error
+      - name: Upload individual patched Leap RPM
+        if: success() && startsWith(matrix.platform, 'leap')
+        uses: actions/upload-artifact@v7
+        with:
+          archive: false
+          path: dist/${{ matrix.platform }}/${{ matrix.arch }}/netavark-[0-9]*.rpm
+          if-no-files-found: error
       - name: Attach individual uncompressed native Fedora RPM
         if: success() && startsWith(matrix.platform, 'fedora')
         uses: actions/upload-artifact@v7
