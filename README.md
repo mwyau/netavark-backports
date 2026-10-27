@@ -38,4 +38,4 @@ The resulting packages and source files are saved in `dist/`. Fedora and openSUS
 
 After a release change is merged and the main-branch tests pass, CI prepares a **draft GitHub Release**. Publication to [GitHub Releases](../../releases), an Ubuntu PPA, Fedora COPR or a Debian APT repository is separate.
 
-See [release instructions](docs/releasing.md) for package versioning, source artifacts and publication.
+See [release instructions](release/README.md) for package versioning, source artifacts and publication.

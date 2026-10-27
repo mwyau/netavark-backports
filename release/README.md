@@ -4,11 +4,11 @@ This guide covers source versions, CI artifacts, release drafts and publication.
 
 ## Prepare a change
 
-Each distro is built from its own source package, with the relevant patch from `patches/` applied through quilt or its RPM SPEC. Native source versions are recorded in [`release/sources.lock.json`](../release/sources.lock.json).
+Each distro is built from its own source package, with the relevant patch from `patches/` applied through quilt or its RPM SPEC. Native source versions are recorded in [`sources.lock.json`](sources.lock.json).
 
 When the distribution publishes a new source revision, review its changes and update the lock in a pull request. Adjust the patch if needed. The scripts reject unexpected source versions rather than quietly rebuilding from a different base.
 
-The downstream revision is the single integer in [`release/revision.txt`](../release/revision.txt), initially `1`. It produces `xddd1` in package versions. Increase it to `2` when preparing a new set of changed packages after the first release. CI run numbers, reruns and documentation changes do not increment it.
+The downstream revision is the single integer in [`revision.txt`](revision.txt), initially `1`. It produces `xddd1` in package versions. Increase it to `2` when preparing a new set of changed packages after the first release. CI run numbers, reruns and documentation changes do not increment it.
 
 ## Build and test
 

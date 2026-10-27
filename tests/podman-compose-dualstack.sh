@@ -16,8 +16,15 @@ elif grep -Eq '^ID="?opensuse-leap"?' /etc/os-release; then
   DISTRO=opensuse
   ARCH="$(rpm --eval '%{_arch}')"
   zypper --non-interactive --gpg-auto-import-keys refresh
+  # Leap 16.x has no podman-compose package. Install a pinned test-only
+  # Compose provider in an isolated environment; keep Podman/Netavark native.
   zypper --non-interactive install --no-recommends \
-    podman podman-compose netavark aardvark-dns runc curl jq nftables iproute2
+    podman netavark aardvark-dns runc curl jq nftables iproute2 python313-virtualenv
+  python3 -m virtualenv /opt/netavark-compose-venv
+  /opt/netavark-compose-venv/bin/python -m pip install \
+    --disable-pip-version-check 'podman-compose==1.6.0'
+  export PODMAN_COMPOSE_PROVIDER=/opt/netavark-compose-venv/bin/podman-compose
+  test -x "$PODMAN_COMPOSE_PROVIDER"
 else
   DISTRO=deb
   ARCH="$(dpkg --print-architecture)"
@@ -39,7 +46,7 @@ cgroups = "enabled"
 [engine]
 runtime = "runc"
 cgroup_manager = "cgroupfs"
-compose_providers = ["/usr/bin/podman-compose"]
+compose_providers = ["/opt/netavark-compose-venv/bin/podman-compose"]
 EOF
 else
   cat >/etc/containers/containers.conf <<'EOF'
@@ -51,13 +58,19 @@ compose_providers = ["/usr/bin/podman-compose"]
 EOF
 fi
 cat /etc/os-release
-if [[ "$DISTRO" == fedora || "$DISTRO" == opensuse ]]; then rpm -q podman netavark podman-compose; else dpkg-query -W podman netavark podman-compose; fi
+if [[ "$DISTRO" == opensuse ]]; then
+  rpm -q podman netavark runc python313-virtualenv
+elif [[ "$DISTRO" == fedora ]]; then
+  rpm -q podman netavark podman-compose
+else
+  dpkg-query -W podman netavark podman-compose
+fi
 podman info --format '{{.Host.NetworkBackend}}' | grep -Fx netavark
 podman compose version
 shopt -s nullglob
 if [[ "$DISTRO" == fedora || "$DISTRO" == opensuse ]]; then
   RPMS=(/packages/netavark-[0-9]*.xddd"${REVISION:?CI revision required}"*."$ARCH".rpm)
-  [[ "${#RPMS[@]}" == 1 ]] || { echo "FAIL: missing patched Fedora $FEDORA_RELEASE RPM" >&2; exit 1; }
+  [[ "${#RPMS[@]}" == 1 ]] || { echo "FAIL: missing patched $DISTRO candidate RPM for $ARCH" >&2; exit 1; }
   install_candidate() {
     if [[ "$DISTRO" == fedora ]]; then
       dnf -y install "${RPMS[0]}"
