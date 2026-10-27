@@ -126,6 +126,29 @@ published() {
 }
 check_isolation
 if [[ "$MODE" == upgrade ]]; then
+  echo "=== NEGATIVE CONTROL: stock Netavark before candidate upgrade ==="
+  # Verify the published ports work from the host itself, otherwise failure
+  # from the source container could mean a broken HTTP service, not isolation.
+  curl --noproxy '*' -fsS -g --connect-timeout 3 --max-time 8     "http://$v4_gw:18111/" | grep -qx COMPOSE_DUALSTACK_OK || {
+      echo "FAIL: stock IPv4 published port is unreachable from host"; exit 1; }
+  curl --noproxy '*' -fsS -g --connect-timeout 3 --max-time 8     "http://[$v6_gw]:18112/" | grep -qx COMPOSE_DUALSTACK_OK || {
+      echo "FAIL: stock IPv6 published port is unreachable from host"; exit 1; }
+  echo "PASS: stock host namespace can access both published ports"
+
+  # EXPECTED FAILURE on unpatched Netavark, not merely absence of
+  # post-upgrade failures. Reject a candidate if the stock baseline already
+  # permits published-port access (the test then proves no improvement).
+  for spec in "IPv4|http://$v4_gw:18111/" "IPv6|http://[$v6_gw]:18112/"; do
+    proto="${spec%%|*}"
+    url="${spec#*|}"
+    if source_get "$url" >"$WORK/before-${proto}.out" 2>&1; then
+      echo "FAIL: stock $proto already permits cross-isolated published port" >&2
+      cat "$WORK/before-${proto}.out" >&2
+      exit 1
+    fi
+    echo "PASS: before patch, $proto source Compose service CANNOT reach target published port"
+  done
+  echo "=== Install patched package with two existing Compose services ==="
   install_candidate
   compose restart target
   ready
@@ -139,4 +162,7 @@ jump="$(printf '%s\n' "$rules" | grep -n 'jump NETAVARK-ISOLATION-1' | head -n1 
   echo "FAIL: DNAT rule positioned after bridge isolation" >&2; exit 1;
 }
 published
+if [[ "$MODE" == upgrade ]]; then
+  echo "PASS: before-patch IPv4+IPv6 DENIED -> after-patch IPv4+IPv6 ALLOWED"
+fi
 echo "PASS: two Compose services in $MODE mode, including IPv6"
