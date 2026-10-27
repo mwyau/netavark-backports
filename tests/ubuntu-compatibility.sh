@@ -5,16 +5,19 @@ set -Eeuo pipefail
 export DEBIAN_FRONTEND=noninteractive
 
 cat /etc/os-release
-case "${VERSION_CODENAME:-}" in
-  *) . /etc/os-release ;;
-esac
+. /etc/os-release
 case "${VERSION_CODENAME:-}" in
   jammy|noble) ;;
   *) echo "Unsupported stock-compatibility suite: ${VERSION_CODENAME:-unknown}" >&2; exit 2 ;;
 esac
 
 apt-get update
-apt-get install -y --no-install-recommends podman curl jq ca-certificates iproute2
+apt-get install -y --no-install-recommends podman curl jq ca-certificates iproute2 iptables
+if [[ "$VERSION_CODENAME" == jammy ]]; then
+  apt-get install -y --no-install-recommends containernetworking-plugins
+else
+  apt-get install -y --no-install-recommends netavark aardvark-dns nftables
+fi
 echo '=== Installed networking packages ==='
 dpkg-query -W podman netavark 2>&1 || :
 echo '=== Podman backend ==='
