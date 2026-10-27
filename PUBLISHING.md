@@ -2,18 +2,18 @@
 
 **Status: experimental. Do not publish/install until rootful Podman network regressions pass.** The GitHub Actions matrix must validate the stock distribution package, an in-place upgrade while existing containers are running, and the patched binary on fresh networks. Inspect failures instead of treating a successful package build as proof of runtime correctness.
 
-The native package versions currently targeted are Debian Trixie 1.14.0-2 and Ubuntu Resolute 1.16.1-3.1. Ubuntu Noble (24.04) has a different Netavark 1.4 codebase and needs a separate reviewed backport. Do not publish the Resolute binary for Noble.
+The native patched package versions currently targeted are Debian Trixie 1.14.0-2, Ubuntu Resolute (26.04 LTS) 1.16.1-3.1, and Ubuntu Stonking (26.10 interim) 1.17.2-2. The CI also covers all other standard-supported Ubuntu releases: Noble (24.04 LTS, Netavark 1.4.0-4 without the nftables driver) and Jammy (22.04 LTS, Podman 3.4/CNI and no native Netavark package). Their jobs check existing Podman networking without manufacturing or installing an incompatible backport. Standard-support Ubuntu versions are maintained separately from older Ubuntu Pro/ESM releases.
 
 ## Ubuntu PPA (Launchpad)
 
 Proposed owner: `xddd`, if the Launchpad name is available. Email: `albert@xddd.org`. PPA name: `netavark`. The resulting identifier would be `ppa:xddd/netavark`. Account availability must be checked interactively, and the user must register/verify their email.
 
 1. Log into https://launchpad.net and create or activate the public PPA. Register a source-upload OpenPGP signing key at https://launchpad.net/~/+editpgpkeys; never store the private key in GitHub Actions secrets or in the Git repository merely to automate publishing.
-2. Check that the Ubuntu **source** build has passed CI and includes `netavark_<version>_source.changes`, its `.dsc`, original tarball, and Debian quilt tarball. Launchpad accepts source uploads only, not prebuilt `.deb` files.
+2. Check that the **release-specific Ubuntu source** build has passed CI and includes `netavark_<version>_source.changes`, its `.dsc`, original tarball, and Debian quilt tarball. Launchpad accepts source uploads only, not prebuilt `.deb` files.
 3. Download the Ubuntu **source** artifact from the passing CI run on a trusted local Ubuntu system, verify the artifact SHA256SUMS, and unpack in one local directory.
 4. Set `DEBFULLNAME='Albert Yau'`, `DEBEMAIL='albert@xddd.org'`. Sign the exact `netavark_*_source.changes` file and the corresponding source metadata with `debsign -k albert@xddd.org <exact-source.changes>`. Verify the signature.
 5. Upload with `dput ppa:xddd/netavark <exact-source.changes>`. Wait for Launchpad to build each intended architecture and inspect its logs. Do not assume an Ubuntu source build succeeded merely because Debian builds succeeded.
-6. After publishing and independent testing on a disposable Ubuntu system, document `sudo add-apt-repository ppa:xddd/netavark`, `sudo apt update`, `apt-cache policy netavark`, and an explicit tested Netavark version.
+6. Publish a separate signed source upload for each validated Ubuntu suite (currently Resolute and Stonking), after all corresponding builds and runtime tests pass. Do not copy binaries between releases. After publishing and independent testing on disposable Ubuntu systems, document `sudo add-apt-repository ppa:xddd/netavark`, `sudo apt update`, `apt-cache policy netavark`, and an explicit tested Netavark version.
 
 See https://ubuntu.com/docs/launchpad/user/how-to/packaging/ppa-package-upload/ and https://ubuntu.com/docs/launchpad/user/reference/packaging/ppas/ppa/.
 
