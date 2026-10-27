@@ -95,6 +95,7 @@ if [[ -n "$BINARY_CANDIDATE" && "$BINARY_CANDIDATE" != "(none)" ]] &&
   echo "FAIL: native binary $BINARY_CANDIDATE is newer than source $BASE" >&2
   exit 1
 fi
+python3 /work/scripts/check-source-lock.py deb "$SUITE" "$BASE"
 netavark_check_source_available "$BASE"
 VERSION="$(netavark_downstream_version "$BASE" "$REVISION" "$SUITE")"
 printf 'Selecting native source %s (%s) -> candidate %s\n' "$BASE" "$FAMILY" "$VERSION"
@@ -155,11 +156,8 @@ export DEBFULLNAME="Albert Yau"
 export DEBEMAIL="albert@xddd.org"
 dch --no-conf --newversion "$VERSION" --distribution "$DIST" --force-distribution \
   "Backport Netavark published-port isolation fix from PR #1483."
-if [[ "$SUITE" == resolute || "$SUITE" == stonking ]]; then
-  # Launchpad PPAs accept signed source uploads, not CI-built binary .debs.
-  # Produce an unsigned _source.changes to sign on a trusted local machine.
-  dpkg-buildpackage -S -sa -us -uc
-fi
+# Prepare an uploadable native source package for every suite.
+dpkg-buildpackage -S -sa -us -uc
 export DEB_BUILD_OPTIONS="parallel=2"
 export CARGO_BUILD_JOBS=2
 dpkg-buildpackage --build=full --no-sign -j2
@@ -185,4 +183,11 @@ BIN="$(find "$TMP_BIN" -type f -name netavark -perm /111 -print -quit)"
 [[ -n "$BIN" ]] || { echo "Netavark binary missing in deb" >&2; exit 1; }
 "$BIN" --version | grep -F 'netavark'
 (cd "$OUT"; sha256sum -- * > SHA256SUMS)
+mkdir -p "$OUT/source"
+for file in "$OUT"/*.dsc "$OUT"/*.debian.tar.* "$OUT"/*.orig.tar.* \
+  "$OUT"/*_source.changes "$OUT"/*_source.buildinfo; do
+  [[ -f "$file" ]] && cp "$file" "$OUT/source/" || :
+done
+test -n "$(find "$OUT/source" -maxdepth 1 -name '*.dsc' -print -quit)"
+test -n "$(find "$OUT/source" -maxdepth 1 -name '*_source.changes' -print -quit)"
 ls -lh "$OUT"

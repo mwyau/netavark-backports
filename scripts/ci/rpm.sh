@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # One RPM-family build+test job per release/arch; Leap is stock-only.
 set -Eeuo pipefail
-source "$(dirname "$0")/ci-common.sh"
+source "$(dirname "$0")/common.sh"
 ci_require GITHUB_WORKSPACE RPM_PLATFORM RPM_IMAGE RPM_ARCH REVISION
 case "$RPM_PLATFORM" in
   fedora43|fedora44)
@@ -10,7 +10,7 @@ case "$RPM_PLATFORM" in
       -e "FEDORA_RELEASE=$release" \
       -e "EXPECTED_ARCH=$RPM_ARCH" \
       -e "REVISION=$REVISION" \
-      bash /work/scripts/build-fedora.sh
+      bash /work/scripts/build/fedora.sh
     out="$GITHUB_WORKSPACE/dist/$RPM_PLATFORM/$RPM_ARCH"
     shopt -s nullglob
     packages=("$out"/netavark-*.rpm)
@@ -26,7 +26,7 @@ case "$RPM_PLATFORM" in
         bash /tests/podman-compose-dualstack.sh
     done
     echo "PASS: Fedora $release / $RPM_ARCH patched Compose IPv4+IPv6 A/B"
-    ci_release_upload_if_main "${packages[0]}"
+    test -n "$(find "$out/source" -maxdepth 1 -name '*.src.rpm' -print -quit)"
     ;;
   leap16|leap161)
     ci_container runtime "$RPM_IMAGE" \

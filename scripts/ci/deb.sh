@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # One native .deb build and validation per suite and architecture.
 set -Eeuo pipefail
-source "$(dirname "$0")/ci-common.sh"
+source "$(dirname "$0")/common.sh"
 ci_require GITHUB_WORKSPACE SUITE EXPECTED_ARCH REVISION
 case "$SUITE" in
   resolute|stonking) image="ubuntu:$SUITE" ;;
@@ -12,7 +12,7 @@ esac
 
 ci_container build "$image" -e "SUITE=$SUITE" \
   -e "EXPECTED_ARCH=$EXPECTED_ARCH" -e "REVISION=$REVISION" \
-  bash /work/scripts/build.sh
+  bash /work/scripts/build/deb.sh
 
 out="$GITHUB_WORKSPACE/dist/$SUITE/$EXPECTED_ARCH"
 shopt -s nullglob
@@ -44,4 +44,4 @@ for mode in fresh upgrade; do
     bash /tests/podman-compose-dualstack.sh
 done
 echo "PASS: $SUITE / $EXPECTED_ARCH build and IPv4+IPv6 integration"
-ci_release_upload_if_main "${packages[0]}"
+test -n "$(find "$out/source" -maxdepth 1 -name '*.dsc' -print -quit)"

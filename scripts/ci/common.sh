@@ -35,11 +35,3 @@ ci_container() {
   docker run "${options[@]}" "${extra[@]}" "$image" "$@"
 }
 
-ci_release_upload_if_main() {
-  if [[ "${GITHUB_REF:-}" == refs/heads/main &&
-        ( "${GITHUB_EVENT_NAME:-}" == push || "${GITHUB_EVENT_NAME:-}" == workflow_dispatch ) ]]; then
-    bash "$GITHUB_WORKSPACE/scripts/ci-release.sh" upload "$1"
-  else
-    echo "PR/non-main build: candidate validated but NOT published"
-  fi
-}
