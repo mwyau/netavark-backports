@@ -1,4 +1,4 @@
-name: Debian Netavark backport
+name: Ubuntu and Debian Netavark backport
 
 on:
   push:
@@ -25,6 +25,8 @@ jobs:
         include:
           - {suite: trixie, arch: amd64, runner: ubuntu-24.04}
           - {suite: trixie, arch: arm64, runner: ubuntu-24.04-arm}
+          - {suite: resolute, arch: amd64, runner: ubuntu-26.04}
+          - {suite: resolute, arch: arm64, runner: ubuntu-26.04-arm}
           - {suite: forky, arch: amd64, runner: ubuntu-24.04}
           - {suite: forky, arch: arm64, runner: ubuntu-24.04-arm}
           - {suite: sid, arch: amd64, runner: ubuntu-24.04}
@@ -41,13 +43,14 @@ jobs:
           bash -n scripts/build.sh
           bash -n tests/published-port-integration.sh
           test -f patches/1.14/0001-allow-published-ports-across-isolated-bridges.patch
+          test -f patches/1.16/0001-allow-published-ports-across-isolated-bridges.patch
           test -f patches/1.17/0001-allow-published-ports-across-isolated-bridges.patch
           test -f patches/2.0/0001-allow-published-ports-across-isolated-bridges.patch
       - name: Build Debian source and package natively
         shell: bash
         run: |
           set -euo pipefail
-          image="debian:${{ matrix.suite == 'experimental' && 'sid' || matrix.suite }}"
+          image="${{ matrix.suite == 'resolute' && 'ubuntu:resolute' || format('debian:{0}', matrix.suite == 'experimental' && 'sid' || matrix.suite) }}"
           docker run --rm --pull=always \
             -v "$GITHUB_WORKSPACE:/work" -w /work \
             -e SUITE="${{ matrix.suite }}" \
@@ -64,7 +67,7 @@ jobs:
 
 
   integration:
-    name: Published-port integration / trixie / ${{ matrix.arch }}
+    name: Network regression / ${{ matrix.suite }} / ${{ matrix.arch }}
     needs: [build]
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
@@ -75,13 +78,15 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - {arch: amd64, runner: ubuntu-24.04}
-          - {arch: arm64, runner: ubuntu-24.04-arm}
+          - {suite: trixie, arch: amd64, runner: ubuntu-24.04}
+          - {suite: trixie, arch: arm64, runner: ubuntu-24.04-arm}
+          - {suite: resolute, arch: amd64, runner: ubuntu-26.04}
+          - {suite: resolute, arch: arm64, runner: ubuntu-26.04-arm}
     steps:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - name: Download Trixie package via GitHub CLI
+      - name: Download package via GitHub CLI
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -89,23 +94,28 @@ jobs:
           set -euo pipefail
           gh run download "$GITHUB_RUN_ID" \
             --repo "$GITHUB_REPOSITORY" \
-            --name "netavark-trixie-${{ matrix.arch }}" \
+            --name "netavark-${{ matrix.suite }}-${{ matrix.arch }}" \
             --dir packages
-      - name: Regression test inside disposable privileged container
+      - name: Baseline and patched network regression inside disposable containers
         shell: bash
         run: |
           set -euo pipefail
           test -f packages/netavark_*_${{ matrix.arch }}.deb
-          docker run --rm --pull=always \
-            --privileged --security-opt seccomp=unconfined \
-            -v "$GITHUB_WORKSPACE/packages:/packages:ro" \
-            -v "$GITHUB_WORKSPACE/tests:/tests:ro" \
-            debian:trixie bash /tests/published-port-integration.sh
+          image="${{ matrix.suite == 'resolute' && 'ubuntu:resolute' || 'debian:trixie' }}"
+          for mode in baseline patched; do
+            echo "=== ${{ matrix.suite }} / ${{ matrix.arch }} / $mode ==="
+            docker run --rm --pull=always \
+              --privileged --security-opt seccomp=unconfined \
+              -e NETAVARK_TEST_MODE="$mode" \
+              -v "$GITHUB_WORKSPACE/packages:/packages:ro" \
+              -v "$GITHUB_WORKSPACE/tests:/tests:ro" \
+              "$image" bash /tests/published-port-integration.sh
+          done
 
   draft-release:
     name: Attach .deb files to draft GitHub Release
     needs: [build, integration]
-    if: always() && needs.build.result == 'success' && github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    if: always() && needs.build.result == 'success' && needs.integration.result == 'success' && github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -130,8 +140,8 @@ jobs:
           set -euo pipefail
           shopt -s nullglob
           debs=(packages/netavark_*_amd64.deb packages/netavark_*_arm64.deb)
-          if (( ${#debs[@]} != 8 )); then
-            printf 'Expected eight main netavark .deb files, found %s\n' "${#debs[@]}" >&2
+          if (( ${#debs[@]} != 10 )); then
+            printf 'Expected ten main netavark .deb files, found %s\n' "${#debs[@]}" >&2
             exit 1
           fi
           sha256sum "${debs[@]}" | tee packages/SHA256SUMS-release
@@ -148,8 +158,8 @@ jobs:
             --target "$GITHUB_SHA" \
             --draft \
             --prerelease \
-            --title "CI packages ${short} (NOT runtime validated)" \
-            --notes "Unofficial Netavark Debian backport. All eight packages built. Runtime integration result: ${{ needs.integration.result }}. Draft / unreviewed; do not deploy on production DNS without validating this result."
+            --title "CI packages ${short} (experimental; review before deployment)" \
+            --notes "Unofficial Ubuntu/Debian Netavark backport. All ten packages built. Baseline and patched regression jobs passed for Debian Trixie and Ubuntu Resolute (amd64/arm64). Draft / unreviewed: inspect test coverage and rollback plan before deployment."
           gh release upload "$tag" packages/netavark_*_amd64.deb packages/netavark_*_arm64.deb packages/SHA256SUMS-release \
             --repo "$GITHUB_REPOSITORY"
           gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json url,isDraft,assets
