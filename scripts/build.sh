@@ -61,20 +61,27 @@ DIR="$(find . -maxdepth 1 -mindepth 1 -type d -name 'netavark-*' -print -quit)"
 [[ -n "$DIR" ]] || { echo "Missing extracted Debian source" >&2; exit 1; }
 cd "$DIR"
 [[ "$(dpkg-parsechangelog -SVersion)" == "$BASE" ]] || { echo "Source version changed" >&2; exit 1; }
-# Ubuntu Stonking carries Debian's obsolete downgrade to prost 0.12.6,
-# but its current Cargo registry offers only prost 0.14.4. Upstream Netavark
-# 1.17.2 already requires prost 0.14.1 / tonic 0.14.2; Debian 1.17.2-3
-# resolved Debian bug #1145651 by removing this obsolete distribution patch.
-# Reapply all the other native Ubuntu patches, leaving original Cargo.toml
-# dependencies intact. Never rewrite or loosen upstream Cargo dependencies.
+# Ubuntu Stonking carries an obsolete prost 0.12.6 quilt downgrade,
+# while upstream Netavark 1.17.2 supports the distro's prost 0.14.
+# Debian fixed the same problem in netavark 1.17.2-3 (bug #1145651)
+# by removing 0013-compile-against-prost-12.6.patch.
 if [[ "$SUITE" == stonking ]]; then
-  printf '%s\n' "=== Drop obsolete Ubuntu prost 0.12 quilt downgrade ==="
+  echo "=== Removing obsolete Ubuntu prost 0.12 quilt patch ==="
+  export QUILT_PATCHES=debian/patches
   test -f debian/patches/0013-compile-against-prost-12.6.patch
-  grep -Fxq 0013-compile-against-prost-12.6.patch debian/patches/series
+  grep -Fxq '0013-compile-against-prost-12.6.patch' debian/patches/series
   quilt pop -a
-  sed -i '/^0013-compile-against-prost-12\.6\.patch$/d' debian/patches/series
+  sed -i '/^0013-compile-against-prost-12[.]6[.]patch$/d' debian/patches/series
   quilt push -a
-  grep -Eq '^prost = "0\.14\.1"
+  grep -Fq 'prost = "0.14.1"' Cargo.toml || {
+    echo "FAIL: unexpected Netavark 1.17.2 prost dependency"; exit 1;
+  }
+  grep -Fq 'tonic = "0.14.2"' Cargo.toml || {
+    echo "FAIL: unexpected Netavark 1.17.2 tonic dependency"; exit 1;
+  }
+fi
+# Apply the version-specific, reviewed unified-diff patch with Debian quilt.
+# No Python rewriting of upstream source is performed during the package build.
 export QUILT_PATCHES=debian/patches
 PATCH_NAME=9999-allow-cross-bridge-published-ports.patch
 cp "/work/patches/$FAMILY/0001-allow-published-ports-across-isolated-bridges.patch" "debian/patches/$PATCH_NAME"
