@@ -48,7 +48,7 @@ jobs:
         run: bash scripts/ci-release.sh init
 
   deb:
-    name: deb / ${{ matrix.suite }} / ${{ matrix.arch }}
+    name: deb / ${{ matrix.os }}-${{ matrix.suite }} / ${{ matrix.arch }}
     needs: [validate, prepare-release]
     if: always() && needs.validate.result == 'success' && (needs.prepare-release.result == 'success' || needs.prepare-release.result == 'skipped')
     runs-on: ${{ matrix.runner }}
@@ -60,18 +60,18 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - {suite: trixie, arch: amd64, runner: ubuntu-24.04}
-          - {suite: trixie, arch: arm64, runner: ubuntu-24.04-arm}
-          - {suite: resolute, arch: amd64, runner: ubuntu-26.04}
-          - {suite: resolute, arch: arm64, runner: ubuntu-26.04-arm}
-          - {suite: stonking, arch: amd64, runner: ubuntu-26.04}
-          - {suite: stonking, arch: arm64, runner: ubuntu-26.04-arm}
-          - {suite: forky, arch: amd64, runner: ubuntu-24.04}
-          - {suite: forky, arch: arm64, runner: ubuntu-24.04-arm}
-          - {suite: sid, arch: amd64, runner: ubuntu-24.04}
-          - {suite: sid, arch: arm64, runner: ubuntu-24.04-arm}
-          - {suite: experimental, arch: amd64, runner: ubuntu-24.04}
-          - {suite: experimental, arch: arm64, runner: ubuntu-24.04-arm}
+          - {suite: trixie, os: debian, arch: amd64, runner: ubuntu-24.04}
+          - {suite: trixie, os: debian, arch: arm64, runner: ubuntu-24.04-arm}
+          - {suite: resolute, os: ubuntu, arch: amd64, runner: ubuntu-26.04}
+          - {suite: resolute, os: ubuntu, arch: arm64, runner: ubuntu-26.04-arm}
+          - {suite: stonking, os: ubuntu, arch: amd64, runner: ubuntu-26.04}
+          - {suite: stonking, os: ubuntu, arch: arm64, runner: ubuntu-26.04-arm}
+          - {suite: forky, os: debian, arch: amd64, runner: ubuntu-24.04}
+          - {suite: forky, os: debian, arch: arm64, runner: ubuntu-24.04-arm}
+          - {suite: sid, os: debian, arch: amd64, runner: ubuntu-24.04}
+          - {suite: sid, os: debian, arch: arm64, runner: ubuntu-24.04-arm}
+          - {suite: experimental, os: debian, arch: amd64, runner: ubuntu-24.04}
+          - {suite: experimental, os: debian, arch: arm64, runner: ubuntu-24.04-arm}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -93,7 +93,7 @@ jobs:
           retention-days: 30
 
   rpm:
-    name: rpm / ${{ matrix.platform }} / ${{ matrix.arch }}
+    name: rpm / ${{ matrix.label }} / ${{ matrix.arch }}
     needs: [validate, prepare-release]
     if: always() && needs.validate.result == 'success' && (needs.prepare-release.result == 'success' || needs.prepare-release.result == 'skipped')
     runs-on: ${{ matrix.runner }}
@@ -104,14 +104,14 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - {platform: fedora43, image: 'fedora:43', arch: x86_64, runner: ubuntu-24.04}
-          - {platform: fedora43, image: 'fedora:43', arch: aarch64, runner: ubuntu-24.04-arm}
-          - {platform: fedora44, image: 'fedora:44', arch: x86_64, runner: ubuntu-24.04}
-          - {platform: fedora44, image: 'fedora:44', arch: aarch64, runner: ubuntu-24.04-arm}
-          - {platform: leap16, image: 'opensuse/leap:16.0', arch: x86_64, runner: ubuntu-24.04}
-          - {platform: leap16, image: 'opensuse/leap:16.0', arch: aarch64, runner: ubuntu-24.04-arm}
-          - {platform: leap161, image: 'opensuse/leap:16.1', arch: x86_64, runner: ubuntu-24.04}
-          - {platform: leap161, image: 'opensuse/leap:16.1', arch: aarch64, runner: ubuntu-24.04-arm}
+          - {platform: fedora43, label: fedora-43, image: 'fedora:43', arch: x86_64, runner: ubuntu-24.04}
+          - {platform: fedora43, label: fedora-43, image: 'fedora:43', arch: aarch64, runner: ubuntu-24.04-arm}
+          - {platform: fedora44, label: fedora-44, image: 'fedora:44', arch: x86_64, runner: ubuntu-24.04}
+          - {platform: fedora44, label: fedora-44, image: 'fedora:44', arch: aarch64, runner: ubuntu-24.04-arm}
+          - {platform: leap16, label: opensuse-leap-16.0, image: 'opensuse/leap:16.0', arch: x86_64, runner: ubuntu-24.04}
+          - {platform: leap16, label: opensuse-leap-16.0, image: 'opensuse/leap:16.0', arch: aarch64, runner: ubuntu-24.04-arm}
+          - {platform: leap161, label: opensuse-leap-16.1, image: 'opensuse/leap:16.1', arch: x86_64, runner: ubuntu-24.04}
+          - {platform: leap161, label: opensuse-leap-16.1, image: 'opensuse/leap:16.1', arch: aarch64, runner: ubuntu-24.04-arm}
     steps:
       - uses: actions/checkout@v7
         with:
