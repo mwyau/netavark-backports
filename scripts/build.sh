@@ -9,6 +9,7 @@ ARCH="$(dpkg --print-architecture)"
 case "$SUITE" in
   trixie) BASE=1.14.0-2; FAMILY=1.14; DIST=trixie ;;
   resolute) BASE=1.16.1-3.1; FAMILY=1.16; DIST=resolute ;;
+  stonking) BASE=1.17.2-2; FAMILY=1.17; DIST=stonking ;;
   forky) BASE=1.17.2-3; FAMILY=1.17; DIST=forky ;;
   sid) BASE=1.17.2-3; FAMILY=1.17; DIST=sid ;;
   experimental) BASE=2.0.0-1; FAMILY=2.0; DIST=sid ;;
@@ -25,7 +26,7 @@ Suites: sid experimental
 Components: main
 Signed-By: /usr/share/keyrings/debian-archive-keyring.pgp
 EOF
-elif [[ "$SUITE" == resolute ]]; then
+elif [[ "$SUITE" == resolute || "$SUITE" == stonking ]]; then
   # Use Ubuntu's actual source package, never a Debian binary relabelled as Ubuntu.
   if [[ "$ARCH" == arm64 ]]; then
     UBUNTU_ARCHIVE=http://ports.ubuntu.com/ubuntu-ports
@@ -35,7 +36,7 @@ elif [[ "$SUITE" == resolute ]]; then
   cat >/etc/apt/sources.list.d/netavark-source.sources <<EOF
 Types: deb-src
 URIs: $UBUNTU_ARCHIVE
-Suites: resolute
+Suites: $SUITE
 Components: main universe
 Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
 EOF
@@ -74,7 +75,7 @@ export DEBFULLNAME="xddd Netavark Backport"
 export DEBEMAIL="albert@xddd.org"
 dch --no-conf --newversion "$VERSION" --distribution "$DIST" --force-distribution \
   "Backport Netavark published-port isolation fix from PR #1483."
-if [[ "$SUITE" == resolute ]]; then
+if [[ "$SUITE" == resolute || "$SUITE" == stonking ]]; then
   # Launchpad PPAs accept signed source uploads, not CI-built binary .debs.
   # Produce an unsigned _source.changes to sign on a trusted local machine.
   dpkg-buildpackage -S -sa -us -uc
