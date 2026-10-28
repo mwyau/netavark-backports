@@ -34,9 +34,9 @@ jobs:
           fetch-depth: 0
       - name: Check version ordering and release scripts
         run: |
-          python3 -m py_compile scripts/versions.py scripts/ci/plan.py scripts/ci/release.py
-          bash -n scripts/ci/run.sh scripts/ci/propose-updates.sh
-          bash tests/debian-versioning.sh
+          python3 -m py_compile scripts/versions.py scripts/ci/plan.py scripts/ci/release.py scripts/ci/run.py scripts/ci/propose-updates.py
+          bash -n scripts/build/*.sh tests/*.sh
+          bash tests/versions.sh
       - name: Find most recent release snapshot
         id: base
         env:
@@ -80,7 +80,7 @@ jobs:
         env:
           SUITE: ${{ matrix.suite }}
           EXPECTED_ARCH: ${{ matrix.arch }}
-        run: bash scripts/ci/run.sh deb
+        run: python3 scripts/ci/run.py deb
       - name: Upload native Debian source package
         if: success() && matrix.arch == 'amd64' && matrix.suite != 'experimental'
         uses: actions/upload-artifact@v7
@@ -120,7 +120,7 @@ jobs:
           RPM_PLATFORM: ${{ matrix.platform }}
           RPM_IMAGE: ${{ matrix.image }}
           RPM_ARCH: ${{ matrix.arch }}
-        run: bash scripts/ci/run.sh rpm
+        run: python3 scripts/ci/run.py rpm
       - name: Upload native source RPM
         if: success() && matrix.arch == 'x86_64'
         uses: actions/upload-artifact@v7
