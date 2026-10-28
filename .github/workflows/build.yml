@@ -4,6 +4,7 @@ on:
   pull_request:
   push:
     branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -27,17 +28,58 @@ jobs:
           find scripts tests -type f -name '*.sh' -print0 | xargs -0 -r -n1 bash -n
           python3 -m py_compile scripts/check-source-version.py
           python3 scripts/check-source-version.py --validate
-          python3 -m py_compile scripts/ci/verify-release.py
+          python3 -m py_compile scripts/ci/verify-release.py scripts/ci/plan.py scripts/ci/update-versions.py
           bash tests/debian-versioning.sh
           for version in 1.14 1.16 1.17 2.0; do
             test -s "patches/$version/0001-allow-published-ports-across-isolated-bridges.patch"
           done
           test ! -e scripts/build-fedora44.sh
 
+  plan:
+    name: Select changed package targets
+    needs: [validate]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      deb: ${{ steps.plan.outputs.deb }}
+      rpm: ${{ steps.plan.outputs.rpm }}
+      has_deb: ${{ steps.plan.outputs.has_deb }}
+      has_rpm: ${{ steps.plan.outputs.has_rpm }}
+      has_builds: ${{ steps.plan.outputs.has_builds }}
+      release: ${{ steps.plan.outputs.release }}
+      base_tag: ${{ steps.base.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Find most recent release snapshot
+        id: base
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="$(gh release list --limit 1000 --json tagName --jq '.[].tagName' |
+            grep -E '^netavark-[0-9]{8}\.[1-9][0-9]*$' | head -n1 || true)"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          if [[ "${{ github.event_name }}" == push && -n "$tag" ]]; then
+            sha="$(gh release view "$tag" --json targetCommitish --jq .targetCommitish)"
+            [[ "$sha" =~ ^[0-9a-f]{40}$ ]]
+            git cat-file -e "$sha^{commit}"
+            echo "BASE_REF=$sha" >> "$GITHUB_ENV"
+          else
+            echo "BASE_REF=origin/main" >> "$GITHUB_ENV"
+          fi
+      - name: Calculate native build matrices
+        id: plan
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: python3 scripts/ci/plan.py
+
   deb:
     name: deb / ${{ matrix.os }}-${{ matrix.suite }} / ${{ matrix.arch }}
-    needs: [validate]
-    if: needs.validate.result == 'success'
+    needs: [plan]
+    if: needs.plan.outputs.has_deb == 'true'
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 180
     continue-on-error: ${{ matrix.suite == 'experimental' }}
@@ -45,20 +87,7 @@ jobs:
       contents: read
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - {suite: trixie, os: debian, arch: amd64, runner: ubuntu-24.04}
-          - {suite: trixie, os: debian, arch: arm64, runner: ubuntu-24.04-arm}
-          - {suite: resolute, os: ubuntu, arch: amd64, runner: ubuntu-26.04}
-          - {suite: resolute, os: ubuntu, arch: arm64, runner: ubuntu-26.04-arm}
-          - {suite: stonking, os: ubuntu, arch: amd64, runner: ubuntu-26.04}
-          - {suite: stonking, os: ubuntu, arch: arm64, runner: ubuntu-26.04-arm}
-          - {suite: forky, os: debian, arch: amd64, runner: ubuntu-24.04}
-          - {suite: forky, os: debian, arch: arm64, runner: ubuntu-24.04-arm}
-          - {suite: sid, os: debian, arch: amd64, runner: ubuntu-24.04}
-          - {suite: sid, os: debian, arch: arm64, runner: ubuntu-24.04-arm}
-          - {suite: experimental, os: debian, arch: amd64, runner: ubuntu-24.04}
-          - {suite: experimental, os: debian, arch: arm64, runner: ubuntu-24.04-arm}
+      matrix: ${{ fromJSON(needs.plan.outputs.deb) }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -89,8 +118,8 @@ jobs:
 
   rpm:
     name: rpm / ${{ matrix.label }} / ${{ matrix.arch }}
-    needs: [validate]
-    if: needs.validate.result == 'success'
+    needs: [plan]
+    if: needs.plan.outputs.has_rpm == 'true'
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 180
     # All supported RPM targets must pass their network tests.
@@ -98,16 +127,7 @@ jobs:
       contents: read
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - {platform: fedora43, label: fedora-43, image: 'fedora:43', arch: x86_64, runner: ubuntu-24.04}
-          - {platform: fedora43, label: fedora-43, image: 'fedora:43', arch: aarch64, runner: ubuntu-24.04-arm}
-          - {platform: fedora44, label: fedora-44, image: 'fedora:44', arch: x86_64, runner: ubuntu-24.04}
-          - {platform: fedora44, label: fedora-44, image: 'fedora:44', arch: aarch64, runner: ubuntu-24.04-arm}
-          - {platform: leap16, label: opensuse-leap-16.0, image: 'opensuse/leap:16.0', arch: x86_64, runner: ubuntu-24.04}
-          - {platform: leap16, label: opensuse-leap-16.0, image: 'opensuse/leap:16.0', arch: aarch64, runner: ubuntu-24.04-arm}
-          - {platform: leap161, label: opensuse-leap-16.1, image: 'opensuse/leap:16.1', arch: x86_64, runner: ubuntu-24.04}
-          - {platform: leap161, label: opensuse-leap-16.1, image: 'opensuse/leap:16.1', arch: aarch64, runner: ubuntu-24.04-arm}
+      matrix: ${{ fromJSON(needs.plan.outputs.rpm) }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -154,8 +174,8 @@ jobs:
 
   verify-release:
     name: Verify complete release candidate
-    needs: [validate, deb, rpm]
-    if: always() && needs.validate.result == 'success' && needs.deb.result == 'success' && needs.rpm.result == 'success'
+    needs: [plan, deb, rpm]
+    if: always() && needs.plan.result == 'success' && needs.plan.outputs.has_builds == 'true' && (needs.deb.result == 'success' || needs.deb.result == 'skipped') && (needs.rpm.result == 'success' || needs.rpm.result == 'skipped')
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -166,12 +186,16 @@ jobs:
       - uses: actions/download-artifact@v8
         with:
           path: incoming
-      - run: bash scripts/ci/release.sh verify incoming
+      - name: Verify changed builds against full release snapshot
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE_TAG: ${{ needs.plan.outputs.base_tag }}
+        run: bash scripts/ci/release.sh verify incoming
 
   draft-release:
     name: Create draft on validated main
-    needs: [verify-release]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.verify-release.result == 'success'
+    needs: [plan, verify-release]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.plan.outputs.release == 'true' && needs.verify-release.result == 'success'
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -186,4 +210,5 @@ jobs:
       - name: Create unpublished release draft
         env:
           GH_TOKEN: ${{ github.token }}
+          BASE_TAG: ${{ needs.plan.outputs.base_tag }}
         run: bash scripts/ci/release.sh create incoming
