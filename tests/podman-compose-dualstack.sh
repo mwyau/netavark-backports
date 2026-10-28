@@ -25,6 +25,26 @@ elif grep -Eq '^ID="?opensuse-leap"?' /etc/os-release; then
     --disable-pip-version-check 'podman-compose==1.6.0'
   export PODMAN_COMPOSE_PROVIDER=/opt/netavark-compose-venv/bin/podman-compose
   test -x "$PODMAN_COMPOSE_PROVIDER"
+  # Leap ships runc, which cannot run with NoCgroups inside GitHub's
+  # nested Docker environment. Use an upstream, checksum-pinned crun only
+  # for these CI networking tests; the native Leap RPM is not modified.
+  case "$ARCH" in
+    x86_64)
+      CRUN_ARCH=amd64
+      CRUN_SHA256=e7b059390e27d0f283e1debbe89d9c5847870f3d8325f31ccd954533fdd6ea78
+      ;;
+    aarch64)
+      CRUN_ARCH=arm64
+      CRUN_SHA256=6ac05ea41343cf91b12832c69f9a2a8c6dc5380032f4c0e02a46cc6aba8804f5
+      ;;
+    *) echo "Unsupported Leap architecture: $ARCH" >&2; exit 2 ;;
+  esac
+  curl --fail --location --retry 3 --retry-all-errors \
+    "https://github.com/containers/crun/releases/download/1.30.1/crun-1.30.1-linux-${CRUN_ARCH}-disable-systemd" \
+    --output /usr/local/bin/crun
+  printf '%s  %s\n' "$CRUN_SHA256" /usr/local/bin/crun | sha256sum --check
+  chmod 0755 /usr/local/bin/crun
+  /usr/local/bin/crun --version
 else
   DISTRO=deb
   ARCH="$(dpkg --print-architecture)"
@@ -46,9 +66,11 @@ if [[ "$DISTRO" == opensuse ]]; then
 [containers]
 cgroups = "disabled"
 [engine]
-runtime = "runc"
+runtime = "crun"
 cgroup_manager = "cgroupfs"
 compose_providers = ["/opt/netavark-compose-venv/bin/podman-compose"]
+[engine.runtimes]
+crun = ["/usr/local/bin/crun"]
 EOF
 else
   cat >/etc/containers/containers.conf <<'EOF'
@@ -68,6 +90,9 @@ else
   dpkg-query -W podman netavark podman-compose
 fi
 podman info --format '{{.Host.NetworkBackend}}' | grep -Fx netavark
+if [[ "$DISTRO" == opensuse ]]; then
+  podman info --format '{{.Host.OCIRuntime.Name}}' | grep -Fx crun
+fi
 podman compose version
 shopt -s nullglob
 if [[ "$DISTRO" == fedora || "$DISTRO" == opensuse ]]; then
