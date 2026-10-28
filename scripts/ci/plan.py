@@ -133,7 +133,6 @@ def main() -> None:
         "rpm": json.dumps({"include": rpm}, separators=(",", ":")),
         "has_deb": str(bool(deb)).lower(),
         "has_rpm": str(bool(rpm)).lower(),
-        "has_builds": str(bool(changed)).lower(),
         "release": str(release).lower(),
     }
     print(f"Build targets: {sorted(changed)}")

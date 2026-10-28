@@ -25,7 +25,6 @@ jobs:
       rpm: ${{ steps.plan.outputs.rpm }}
       has_deb: ${{ steps.plan.outputs.has_deb }}
       has_rpm: ${{ steps.plan.outputs.has_rpm }}
-      has_builds: ${{ steps.plan.outputs.has_builds }}
       release: ${{ steps.plan.outputs.release }}
       base_tag: ${{ steps.base.outputs.tag }}
     steps:
@@ -80,7 +79,6 @@ jobs:
           persist-credentials: false
       - name: Build native deb, test Podman and dual-stack Podman
         env:
-          GH_TOKEN: ${{ github.token }}
           SUITE: ${{ matrix.suite }}
           EXPECTED_ARCH: ${{ matrix.arch }}
         run: bash scripts/ci/run.sh deb
@@ -120,37 +118,20 @@ jobs:
           persist-credentials: false
       - name: Native Fedora/openSUSE source RPM build and IPv4/IPv6 tests
         env:
-          GH_TOKEN: ${{ github.token }}
           RPM_PLATFORM: ${{ matrix.platform }}
           RPM_IMAGE: ${{ matrix.image }}
           RPM_ARCH: ${{ matrix.arch }}
         run: bash scripts/ci/run.sh rpm
-      - name: Upload patched native Fedora SRPM
-        if: success() && startsWith(matrix.platform, 'fedora') && matrix.arch == 'x86_64'
+      - name: Upload native source RPM
+        if: success() && matrix.arch == 'x86_64'
         uses: actions/upload-artifact@v7
         with:
           archive: false
           path: dist/${{ matrix.platform }}/${{ matrix.arch }}/source/netavark-*.src.rpm
           if-no-files-found: error
           retention-days: 30
-      - name: Upload patched Leap source RPM
-        if: success() && startsWith(matrix.platform, 'leap') && matrix.arch == 'x86_64'
-        uses: actions/upload-artifact@v7
-        with:
-          archive: false
-          path: dist/${{ matrix.platform }}/${{ matrix.arch }}/source/netavark-*.src.rpm
-          if-no-files-found: error
-          retention-days: 30
-      - name: Upload individual patched Leap RPM
-        if: success() && startsWith(matrix.platform, 'leap')
-        uses: actions/upload-artifact@v7
-        with:
-          archive: false
-          path: dist/${{ matrix.platform }}/${{ matrix.arch }}/netavark-[0-9]*.rpm
-          if-no-files-found: error
-          retention-days: 30
-      - name: Attach individual uncompressed native Fedora RPM
-        if: success() && startsWith(matrix.platform, 'fedora')
+      - name: Upload native RPM
+        if: success()
         uses: actions/upload-artifact@v7
         with:
           archive: false
