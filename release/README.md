@@ -30,7 +30,7 @@ Only one source artifact per distro release is uploaded, from the x86-64/AMD64 b
 
 ## Draft GitHub releases
 
-Once the selected build checks pass on `main`, a changed release-target version or revision creates a draft GitHub Release. The candidate combines **newly tested packages from that CI run** with unchanged assets from the latest draft or published release. The previous release and final complete snapshot are checked against their manifests and SHA256SUMS. Pull requests verify the candidate without creating a release. Documentation-only changes do not rebuild packages or create drafts.
+Pull requests build and test affected targets, without preparing a Release. When a release-target source/revision changes on `main`, CI builds the affected packages, assembles one complete snapshot using verified unchanged assets from the previous release, and verifies it against SHA256SUMS. The exact validated snapshot is uploaded to an unpublished draft. Documentation-only commits create no draft.
 
 The draft contains 10 Debian/Ubuntu DEBs, 4 Fedora RPMs and 4 Leap RPMs, their 9 native source bundles/RPMs, `versions.json` and `SHA256SUMS`. Assets retain native package filenames and carry human-readable distribution/architecture labels on GitHub Releases. Debian Experimental remains build-only.
 

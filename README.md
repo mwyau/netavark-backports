@@ -12,7 +12,7 @@ Distribution-native packages carrying the fix for published ports across isolate
 | Debian Forky, Sid | 1.17 | DEB |
 | Ubuntu Resolute, Stonking | 1.16, 1.17 | DEB |
 | Fedora 43, 44 | 1.17 | RPM |
-| openSUSE Leap 16.0, 16.1 | 1.14, 1.17 | RPM (under development) |
+| openSUSE Leap 16.0, 16.1 | 1.14, 1.17 | RPM |
 | Debian Experimental | 2.0 | Build experiment |
 
 AMD64/x86-64 and ARM64/AArch64 are tested in GitHub Actions. Both Leap releases passed the native build and dual-stack networking matrix and are included in validated release candidates.

@@ -33,8 +33,11 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0
-      - name: Check Debian package version ordering
-        run: bash tests/debian-versioning.sh
+      - name: Check version ordering and release scripts
+        run: |
+          python3 -m py_compile scripts/versions.py scripts/ci/plan.py scripts/ci/release.py
+          bash -n scripts/ci/run.sh scripts/ci/release.sh scripts/ci/propose-updates.sh
+          bash tests/debian-versioning.sh
       - name: Find most recent release snapshot
         id: base
         env:
