@@ -18,6 +18,8 @@ Version selection and downstream DEB naming are implemented in `scripts/versions
 
 The main [workflow](../.github/workflows/ci.yml) runs on pull requests and pushes to `main`. PRs compile and test the targets affected by source locks, patches, build scripts or networking tests. On `main`, only targets whose reviewed source or revision differs from the most recent release snapshot are rebuilt. Each affected target builds on both architectures. If no snapshot exists yet, all targets are built.
 
+The networking tests use `tests/dualstack.sh` for fresh installs and IPv4/IPv6 upgrade regressions, and `tests/ports.sh` for Debian/Ubuntu's in-place IPv4 upgrade without deleting existing networks. `tests/ci.py` checks versioning, release assets and CI planning; `tests/native.sh` and `tests/ubuntu.sh` are standalone stock-distribution probes.
+
 The key test checks two Podman containers on isolated IPv4/IPv6 bridges, first with the original package, then after upgrading Netavark while the networks remain in place. The published host ports must work after the upgrade, and direct cross-bridge traffic must remain isolated.
 
 Each passing job uploads its original package binary as a single downloadable Actions artifact, without ZIP wrapping. CI also retains source inputs:

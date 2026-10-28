@@ -63,9 +63,12 @@ def affected_by_files(paths: set[str], current: dict) -> tuple[set[str], set[str
             packaging |= {key for key in RPM if key.startswith("fedora/")}
         elif path == "scripts/build/opensuse.sh":
             packaging |= {key for key in RPM if key.startswith("opensuse/")}
-        elif (path.startswith("tests/") or path in {
-              "scripts/ci/run.py", "scripts/ci/plan.py", "scripts/versions.py",
-              ".github/workflows/ci.yml"}):
+        elif path == "tests/ports.sh":
+            all_targets |= set(DEB) - {"debian/experimental"}
+        elif path == "tests/dualstack.sh":
+            all_targets |= RELEASE
+        elif path in {"scripts/ci/run.py", "scripts/ci/plan.py",
+                      "scripts/versions.py", ".github/workflows/ci.yml"}:
             all_targets |= ALL
     return all_targets | packaging, packaging
 

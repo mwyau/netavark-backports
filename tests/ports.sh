@@ -1,25 +1,15 @@
 #!/usr/bin/env bash
-# Disposable, privileged Podman regression test for Debian and Ubuntu.
-# NETAVARK_TEST_MODE=baseline checks the distribution package's basic networking.
-# NETAVARK_TEST_MODE=patched checks the host-published cross-bridge fix.
-# NETAVARK_TEST_MODE=upgrade upgrades Netavark while existing containers run.
+# IPv4 live-upgrade regression: preserve existing isolated Podman networks.
 set -Eeuo pipefail
 export DEBIAN_FRONTEND=noninteractive
 export NETAVARK_FW=nftables
-MODE="${NETAVARK_TEST_MODE:-patched}"
-[[ "$MODE" == baseline || "$MODE" == patched || "$MODE" == upgrade ]] || { echo "Invalid test mode: $MODE" >&2; exit 2; }
+[[ "${NETAVARK_TEST_MODE:-upgrade}" == upgrade ]] || { echo "Only upgrade mode is supported" >&2; exit 2; }
 ARCH="$(dpkg --print-architecture)"
 
 apt-get update
 apt-get install -y --no-install-recommends podman aardvark-dns curl jq nftables iproute2 ca-certificates
-if [[ "$MODE" == patched ]]; then
-  shopt -s nullglob
-  DEBS=(/packages/netavark_*_"$ARCH".deb)
-  [[ "${#DEBS[@]}" == 1 ]] || { echo "Expected one netavark package for $ARCH, found ${#DEBS[@]}" >&2; exit 1; }
-  apt-get install -y "${DEBS[0]}"
-fi
 
-echo "=== OS / packages / Podman backend / mode=$MODE ==="
+echo "=== Native package networking before in-place upgrade ==="
 cat /etc/os-release
 dpkg-query -W netavark podman aardvark-dns
 podman info --format '{{.Host.NetworkBackend}}' | grep -Fx netavark
@@ -81,7 +71,7 @@ client_get() {
     docker.io/library/alpine:3.20 wget -q -T 5 -O- "$url"
 }
 
-# Preserve ordinary same-bridge traffic and DNS (baseline and candidate).
+# Preserve ordinary same-bridge traffic and DNS.
 if ! client_get nv_target http://nv_server:8080/ | grep -qx 'PUBLISHED_PORT_OK'; then
   echo "FAIL: same-bridge container connectivity or DNS broke" >&2
   exit 1
@@ -109,52 +99,45 @@ if client_get nv_source "http://$SERVER_IP:8080/" | grep -qx 'PUBLISHED_PORT_OK'
 fi
 echo "PASS: direct cross-bridge connection blocked by isolation"
 
-if [[ "$MODE" == baseline ]]; then
-  echo "PASS: baseline distribution package preserves ordinary Podman networking"
-  exit 0
-fi
-
 # Test package replacement while the existing bridges, nftables chains, and
 # server remain active. New-package-on-clean-network tests cannot catch this.
-if [[ "$MODE" == upgrade ]]; then
-  echo "=== Upgrading Netavark with an active network and running server ==="
-  shopt -s nullglob
-  DEBS=(/packages/netavark_*_"$ARCH".deb)
-  [[ "${#DEBS[@]}" == 1 ]] || { echo "Expected one candidate .deb" >&2; exit 1; }
-  apt-get install -y "${DEBS[0]}"
-  dpkg-query -W netavark
-  if ! client_get nv_target http://nv_server:8080/ | grep -qx 'PUBLISHED_PORT_OK'; then
-    echo "FAIL: existing same-bridge connectivity broke on upgrade" >&2
-    exit 1
-  fi
-  if ! curl -fsS --connect-timeout 5 --max-time 10 "http://$HOST_IP:18081/" \
-       | grep -qx 'PUBLISHED_PORT_OK'; then
-    echo "FAIL: existing published port broke on upgrade" >&2
-    exit 1
-  fi
-  if client_get nv_source "http://$SERVER_IP:8080/" | grep -qx 'PUBLISHED_PORT_OK'; then
-    echo "FAIL: in-place upgrade removed direct bridge isolation" >&2
-    exit 1
-  fi
-  echo "PASS: live upgrade preserved existing connectivity and isolation"
+echo "=== Upgrading Netavark with an active network and running server ==="
+shopt -s nullglob
+DEBS=(/packages/netavark_*_"$ARCH".deb)
+[[ "${#DEBS[@]}" == 1 ]] || { echo "Expected one candidate .deb" >&2; exit 1; }
+apt-get install -y "${DEBS[0]}"
+dpkg-query -W netavark
+if ! client_get nv_target http://nv_server:8080/ | grep -qx 'PUBLISHED_PORT_OK'; then
+  echo "FAIL: existing same-bridge connectivity broke on upgrade" >&2
+  exit 1
+fi
+if ! curl -fsS --connect-timeout 5 --max-time 10 "http://$HOST_IP:18081/" \
+     | grep -qx 'PUBLISHED_PORT_OK'; then
+  echo "FAIL: existing published port broke on upgrade" >&2
+  exit 1
+fi
+if client_get nv_source "http://$SERVER_IP:8080/" | grep -qx 'PUBLISHED_PORT_OK'; then
+  echo "FAIL: in-place upgrade removed direct bridge isolation" >&2
+  exit 1
+fi
+echo "PASS: live upgrade preserved existing connectivity and isolation"
 
-  # Force the updated Netavark binary to set up the existing server network
-  # again, without deleting the networks themselves.
-  podman restart nv_server
-  ready=false
-  for attempt in $(seq 1 30); do
-    if podman exec nv_server wget -q -T 2 -O- http://127.0.0.1:8080/ 2>/dev/null \
-         | grep -qx 'PUBLISHED_PORT_OK'; then
-      ready=true
-      break
-    fi
-    sleep 1
-  done
-  [[ "$ready" == true ]] || { echo "FAIL: server not ready after upgrade/restart" >&2; exit 1; }
-  if ! client_get nv_target http://nv_server:8080/ | grep -qx 'PUBLISHED_PORT_OK'; then
-    echo "FAIL: restarted server lost same-bridge connectivity" >&2
-    exit 1
+# Force the updated Netavark binary to set up the existing server network
+# again, without deleting the networks themselves.
+podman restart nv_server
+ready=false
+for attempt in $(seq 1 30); do
+  if podman exec nv_server wget -q -T 2 -O- http://127.0.0.1:8080/ 2>/dev/null \
+       | grep -qx 'PUBLISHED_PORT_OK'; then
+    ready=true
+    break
   fi
+  sleep 1
+done
+[[ "$ready" == true ]] || { echo "FAIL: server not ready after upgrade/restart" >&2; exit 1; }
+if ! client_get nv_target http://nv_server:8080/ | grep -qx 'PUBLISHED_PORT_OK'; then
+  echo "FAIL: restarted server lost same-bridge connectivity" >&2
+  exit 1
 fi
 
 forward_rules="$(nft list chain inet netavark FORWARD)"

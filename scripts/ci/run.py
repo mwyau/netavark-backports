@@ -78,7 +78,7 @@ def deb() -> None:
         print("Build-only Netavark 2.x: excluded from release")
         return
     test(image, output, "ports.sh", "NETAVARK_TEST_MODE",
-         ("baseline", "upgrade", "patched"))
+         ("upgrade",))
     test(image, output, "dualstack.sh", "NETAVARK_DUALSTACK_MODE",
          ("fresh", "upgrade"))
     if not list((output / "source").glob("*.dsc")):
