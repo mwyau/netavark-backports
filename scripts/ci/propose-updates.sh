@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Propose distro source updates; never merge or publish unreviewed packages.
+# Propose native source updates; merge only after the dispatched CI passes.
 set -Eeuo pipefail
 : "${GH_TOKEN:?}" "${GITHUB_REPOSITORY:?}"
 git config user.name "github-actions[bot]"
@@ -30,8 +30,8 @@ for file in discovered/*.txt; do
   if ! gh pr list --repo "$GITHUB_REPOSITORY" --head "$branch" --state open \
        --json number --jq '.[0].number // empty' | grep -q .; then
     gh pr create --repo "$GITHUB_REPOSITORY" --base main --head "$branch" \
-      --draft --title "Update $family/$target Netavark source to $version" \
-      --body "Discovered from the distribution's native source repository. Review upstream changes and patch applicability, then run the native build and networking regressions before merging. The downstream revision resets to xddd1 for a new source version."
+      --title "Update $family/$target Netavark source to $version" \
+      --body "Discovered from the native source repository. CI validates native package builds, networking regressions and patch applicability before automatic merge. The downstream revision resets to 1 for a new source version; publishing remains manual."
   fi
   # GITHUB_TOKEN-created PRs do not trigger pull_request workflows.
   # workflow_dispatch is an explicit exception to GitHub's recursion prevention.

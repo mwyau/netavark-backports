@@ -72,8 +72,8 @@ def affected_by_files(paths: set[str], current: dict) -> tuple[set[str], set[str
 
 def plan(old: dict, new: dict, paths: set[str], event: str) -> tuple[set[str], set[str]]:
     previous, current = entries(old), entries(new)
-    if set(current) != ALL:
-        raise ValueError("Missing or unknown distribution target in versions.json")
+    if not set(current).issubset(ALL):
+        raise ValueError("Unknown distribution target in versions.json")
     version_changes = {key for key in ALL if previous.get(key) != current.get(key)}
     if not previous:
         return set(ALL), version_changes

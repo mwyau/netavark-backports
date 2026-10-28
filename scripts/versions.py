@@ -25,8 +25,16 @@ def entry(family: str, target: str) -> dict:
 def validate() -> None:
     if versions.get("schema") != 1:
         sys.exit("Unsupported versions.json schema")
-    for family in ("debian", "ubuntu", "fedora", "opensuse"):
-        for target in versions[family]:
+    targets = {
+        "debian": {"trixie", "forky", "sid", "experimental"},
+        "ubuntu": {"resolute", "stonking"},
+        "fedora": {"43", "44"},
+        "opensuse": {"16.0", "16.1"},
+    }
+    for family, expected in targets.items():
+        if set(versions[family]) != expected:
+            sys.exit(f"Unexpected targets in {family}")
+        for target in expected:
             entry(family, target)
 
 

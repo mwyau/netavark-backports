@@ -34,7 +34,7 @@ The resulting packages and source files are saved in `dist/`. Fedora and openSUS
 
 ## Downloads and development
 
-[GitHub Actions](.github/workflows/build.yml) builds and tests candidate binaries with Podman on isolated IPv4/IPv6 networks. Passing jobs attach their original DEB/RPM files and distribution source packages as workflow artifacts.
+[GitHub Actions](.github/workflows/ci.yml) builds and tests candidate binaries with Podman on isolated IPv4/IPv6 networks. Passing jobs attach their original DEB/RPM files and distribution source packages as workflow artifacts.
 
 After a release change is merged and the main-branch tests pass, CI prepares a **draft GitHub Release**. Native source versions and independent per-distribution downstream revisions are recorded in [`release/versions.json`](release/versions.json). Publication to [GitHub Releases](../../releases), an Ubuntu PPA, Fedora COPR or a Debian APT repository is separate.
 

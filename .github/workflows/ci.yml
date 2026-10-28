@@ -203,3 +203,26 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           BASE_TAG: ${{ needs.plan.outputs.base_tag }}
         run: bash scripts/ci/release.sh create candidate
+
+  merge-update:
+    name: Merge tested source updates
+    needs: [plan, deb, rpm]
+    if: always() && github.event_name == 'workflow_dispatch' && startsWith(github.ref_name, 'bot/update-') && needs.plan.result == 'success' && (needs.deb.result == 'success' || needs.deb.result == 'skipped') && (needs.rpm.result == 'success' || needs.rpm.result == 'skipped')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Merge an unchanged, tested bot PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: ${{ github.ref_name }}
+          EXPECTED_SHA: ${{ github.sha }}
+        run: |
+          number="$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number // empty')"
+          [[ -n "$number" ]] || { echo "Missing open update PR" >&2; exit 1; }
+          head="$(gh pr view "$number" --json headRefOid --jq .headRefOid)"
+          [[ "$head" == "$EXPECTED_SHA" ]] || { echo "Bot branch changed during CI" >&2; exit 1; }
+          files="$(gh pr diff "$number" --name-only)"
+          [[ "$files" == release/versions.json ]] || { echo "Unexpected bot PR files: $files" >&2; exit 1; }
+          gh pr merge "$number" --squash --delete-branch
