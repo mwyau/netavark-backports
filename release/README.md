@@ -14,7 +14,7 @@ The downstream revision is the single integer in [`revision.txt`](revision.txt),
 
 The main [workflow](../.github/workflows/build.yml) runs on pull requests and pushes to `main`. The Debian/Ubuntu and RPM matrices compile the native packages and run Podman networking regressions on their target architectures.
 
-The key test checks two Podman Compose services on isolated IPv4/IPv6 bridges, first with the original package, then after upgrading Netavark while the networks remain in place. The published host ports must work after the upgrade, and direct cross-bridge traffic must remain isolated.
+The key test checks two Podman containers on isolated IPv4/IPv6 bridges, first with the original package, then after upgrading Netavark while the networks remain in place. The published host ports must work after the upgrade, and direct cross-bridge traffic must remain isolated.
 
 Each passing job uploads its original package binary as a single downloadable Actions artifact, without ZIP wrapping. CI also retains source inputs:
 

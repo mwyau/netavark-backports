@@ -40,8 +40,8 @@ for mode in fresh upgrade; do
   ci_container runtime "$image" \
     -v "$out:/packages:ro" \
     -v "$GITHUB_WORKSPACE/tests:/tests:ro" \
-    -e "NETAVARK_COMPOSE_MODE=$mode" \
-    bash /tests/podman-compose-dualstack.sh
+    -e "NETAVARK_DUALSTACK_MODE=$mode" \
+    bash /tests/podman-dualstack.sh
 done
 echo "PASS: $SUITE / $EXPECTED_ARCH build and IPv4+IPv6 integration"
 test -n "$(find "$out/source" -maxdepth 1 -name '*.dsc' -print -quit)"

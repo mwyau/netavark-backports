@@ -21,11 +21,11 @@ case "$RPM_PLATFORM" in
       ci_container runtime "$RPM_IMAGE" \
         -v "$out:/packages:ro" \
         -v "$GITHUB_WORKSPACE/tests:/tests:ro" \
-        -e "NETAVARK_COMPOSE_MODE=$mode" \
+        -e "NETAVARK_DUALSTACK_MODE=$mode" \
         -e "REVISION=$REVISION" \
-        bash /tests/podman-compose-dualstack.sh
+        bash /tests/podman-dualstack.sh
     done
-    echo "PASS: Fedora $release / $RPM_ARCH patched Compose IPv4+IPv6 A/B"
+    echo "PASS: Fedora $release / $RPM_ARCH patched Podman IPv4+IPv6 A/B"
     test -n "$(find "$out/source" -maxdepth 1 -name '*.src.rpm' -print -quit)"
     ;;
   leap16|leap161)
@@ -47,10 +47,10 @@ case "$RPM_PLATFORM" in
       ci_container runtime "$RPM_IMAGE" \
         -v "$out:/packages:ro" \
         -v "$GITHUB_WORKSPACE/tests:/tests:ro" \
-        -e "NETAVARK_COMPOSE_MODE=$mode" -e "REVISION=$REVISION" \
-        bash /tests/podman-compose-dualstack.sh
+        -e "NETAVARK_DUALSTACK_MODE=$mode" -e "REVISION=$REVISION" \
+        bash /tests/podman-dualstack.sh
     done
-    echo "PASS: native Leap $version/$RPM_ARCH Compose dual-stack backport"
+    echo "PASS: native Leap $version/$RPM_ARCH Podman dual-stack backport"
     ;;
   *)
     echo "Invalid RPM_PLATFORM=$RPM_PLATFORM" >&2; exit 2 ;;

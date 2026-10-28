@@ -1,30 +1,22 @@
 #!/usr/bin/env bash
-# Dual-stack, two-service Podman Compose runtime regression on disposable CI.
+# Dual-stack, two-container Podman networking regression on disposable CI.
 set -Eeuo pipefail
 export DEBIAN_FRONTEND=noninteractive NETAVARK_FW=nftables
-export PODMAN_COMPOSE_PROVIDER=/usr/bin/podman-compose
-MODE="${NETAVARK_COMPOSE_MODE:-fresh}"
+MODE="${NETAVARK_DUALSTACK_MODE:-fresh}"
 [[ "$MODE" == fresh || "$MODE" == upgrade ]] || exit 2
 if [[ -f /etc/fedora-release ]]; then
   DISTRO=fedora
   FEDORA_RELEASE="$(rpm --eval '%{fedora}')"
   [[ "$FEDORA_RELEASE" == 43 || "$FEDORA_RELEASE" == 44 ]] || { echo "Unsupported Fedora release" >&2; exit 1; }
   ARCH="$(rpm --eval '%{_arch}')"
-  dnf -y install podman podman-compose netavark aardvark-dns \
+  dnf -y install podman netavark aardvark-dns \
     crun curl jq nftables iproute
 elif grep -Eq '^ID="?opensuse-leap"?' /etc/os-release; then
   DISTRO=opensuse
   ARCH="$(rpm --eval '%{_arch}')"
   zypper --non-interactive --gpg-auto-import-keys refresh
-  # Leap 16.x has no podman-compose package. Install a pinned test-only
-  # Compose provider in an isolated environment; keep Podman/Netavark native.
   zypper --non-interactive install --no-recommends \
-    podman netavark aardvark-dns runc curl jq nftables iproute2 python313-virtualenv
-  /usr/bin/python3.13 -m virtualenv /opt/netavark-compose-venv
-  /opt/netavark-compose-venv/bin/python -m pip install \
-    --disable-pip-version-check 'podman-compose==1.6.0'
-  export PODMAN_COMPOSE_PROVIDER=/opt/netavark-compose-venv/bin/podman-compose
-  test -x "$PODMAN_COMPOSE_PROVIDER"
+    podman netavark aardvark-dns runc curl jq nftables iproute2
   # Leap ships runc, which cannot run with NoCgroups inside GitHub's
   # nested Docker environment. Use an upstream, checksum-pinned crun only
   # for these CI networking tests; the native Leap RPM is not modified.
@@ -49,7 +41,7 @@ else
   DISTRO=deb
   ARCH="$(dpkg --print-architecture)"
   apt-get update
-  apt-get install -y --no-install-recommends podman podman-compose netavark \
+  apt-get install -y --no-install-recommends podman netavark \
     aardvark-dns crun curl jq nftables iproute2 ca-certificates
 fi
 mkdir -p /etc/containers
@@ -68,7 +60,6 @@ cgroups = "disabled"
 [engine]
 runtime = "crun"
 cgroup_manager = "cgroupfs"
-compose_providers = ["/opt/netavark-compose-venv/bin/podman-compose"]
 [engine.runtimes]
 crun = ["/usr/local/bin/crun"]
 EOF
@@ -78,22 +69,26 @@ else
 cgroups = "disabled"
 [engine]
 runtime = "crun"
-compose_providers = ["/usr/bin/podman-compose"]
 EOF
 fi
 cat /etc/os-release
 if [[ "$DISTRO" == opensuse ]]; then
-  rpm -q podman netavark runc python313-virtualenv
+  rpm -q podman netavark runc
 elif [[ "$DISTRO" == fedora ]]; then
-  rpm -q podman netavark podman-compose
+  rpm -q podman netavark
 else
-  dpkg-query -W podman netavark podman-compose
+  dpkg-query -W podman netavark
 fi
 podman info --format '{{.Host.NetworkBackend}}' | grep -Fx netavark
+# The OCI runtime setting is exercised by podman run; its reported name differs
+# across Podman versions and is not itself a networking regression.
 if [[ "$DISTRO" == opensuse ]]; then
-  podman info --format '{{.Host.OCIRuntime.Name}}' | grep -Fx crun
+  podman info --format '{{.Host.OCIRuntime.Name}}'
 fi
-podman compose version
+RUN_OPTS=(--cgroups=disabled)
+if [[ "$DISTRO" == opensuse ]]; then
+  RUN_OPTS+=(--runtime=/usr/local/bin/crun)
+fi
 shopt -s nullglob
 if [[ "$DISTRO" == fedora || "$DISTRO" == opensuse ]]; then
   RPMS=(/packages/netavark-[0-9]*.xddd"${REVISION:?CI revision required}"*."$ARCH".rpm)
@@ -113,90 +108,62 @@ else
 fi
 if [[ "$MODE" == fresh ]]; then install_candidate; fi
 
-# Compose operates both services; explicitly provision isolate=true networks to
-# avoid relying on provider-specific driver_opts translations.
+# The two isolated dual-stack bridges are created directly by Podman.
 podman network create --ipv6 --subnet 10.243.71.0/24 --subnet fd71:243:71::/64 \
-  --opt isolate=true nv_compose_source
+  --opt isolate=true nv_dual_source
 podman network create --ipv6 --subnet 10.243.72.0/24 --subnet fd71:243:72::/64 \
-  --opt isolate=true nv_compose_target
+  --opt isolate=true nv_dual_target
 WORK="$(mktemp -d)"
-cat >"$WORK/compose.yml" <<'EOF'
-services:
-  source:
-    image: docker.io/library/alpine:3.20
-    container_name: nv_compose_source
-    command: ["sh", "-c", "sleep 3600"]
-    networks: [source]
-  target:
-    image: docker.io/library/python:3.12-alpine
-    container_name: nv_compose_target
-    command: ["sh", "-c", "mkdir -p /www; echo COMPOSE_DUALSTACK_OK >/www/index.html; exec python3 -m http.server 8080 --bind :: --directory /www"]
-    networks: [target]
-    ports:
-      - "0.0.0.0:18111:8080"
-      - "[::]:18112:8080"
-networks:
-  source:
-    external: true
-    name: nv_compose_source
-  target:
-    external: true
-    name: nv_compose_target
-EOF
-compose() {
-  if [[ "$DISTRO" == opensuse ]]; then
-    # A Compose pod would require cgroup controllers in this nested runner;
-    # each service already uses its own pre-created isolated network.
-    podman compose --in-pod false -p nvdual -f "$WORK/compose.yml" "$@"
-  else
-    podman compose -p nvdual -f "$WORK/compose.yml" "$@"
-  fi
-}
 cleanup() {
-  compose down --remove-orphans >/dev/null 2>&1 || :
-  podman rm -f nv_compose_source nv_compose_target >/dev/null 2>&1 || :
-  podman network rm nv_compose_source nv_compose_target >/dev/null 2>&1 || :
+  podman rm -f nv_dual_source nv_dual_target >/dev/null 2>&1 || :
+  podman network rm nv_dual_source nv_dual_target >/dev/null 2>&1 || :
   rm -rf "$WORK"
 }
 diagnostics() {
-  echo "=== Podman Compose diagnostics ===" >&2
-  compose ps >&2 || :
+  echo "=== Podman networking diagnostics ===" >&2
   podman ps -a >&2 || :
-  podman logs nv_compose_target >&2 || :
+  podman logs nv_dual_target >&2 || :
   nft -a list table inet netavark >&2 || :
 }
 trap cleanup EXIT
 trap 'rc=$?; (( rc == 0 )) || diagnostics' ERR
 
-compose up -d
-[[ "$(podman inspect nv_compose_source --format '{{.State.Running}}')" == true ]]
-[[ "$(podman inspect nv_compose_target --format '{{.State.Running}}')" == true ]]
+# These containers stay on their original isolated networks across the
+# in-place package upgrade. There is no Compose provider or Podman pod.
+podman run "${RUN_OPTS[@]}" -d --name nv_dual_target --network nv_dual_target \
+  -p 0.0.0.0:18111:8080 -p '[::]:18112:8080' \
+  docker.io/library/python:3.12-alpine \
+  sh -c 'mkdir -p /www; echo PODMAN_DUALSTACK_OK >/www/index.html; exec python3 -m http.server 8080 --bind :: --directory /www'
+podman run "${RUN_OPTS[@]}" -d --name nv_dual_source --network nv_dual_source \
+  docker.io/library/alpine:3.20 sh -c 'sleep 3600'
+[[ "$(podman inspect nv_dual_source --format '{{.State.Running}}')" == true ]]
+[[ "$(podman inspect nv_dual_target --format '{{.State.Running}}')" == true ]]
 ready() {
   for attempt in $(seq 1 30); do
-    if podman exec nv_compose_target wget -q -T 2 -O- http://127.0.0.1:8080/ 2>/dev/null \
-      | grep -qx COMPOSE_DUALSTACK_OK; then return 0; fi
+    if podman exec nv_dual_target wget -q -T 2 -O- http://127.0.0.1:8080/ 2>/dev/null \
+      | grep -qx PODMAN_DUALSTACK_OK; then return 0; fi
     sleep 1
   done
   echo "FAIL: Compose target not ready" >&2
   return 1
 }
 ready
-v4_gw="$(podman network inspect nv_compose_source | jq -er '.[0].subnets[] | select(.subnet | contains(".")) | .gateway')"
-v6_gw="$(podman network inspect nv_compose_source | jq -er '.[0].subnets[] | select(.subnet | contains(":")) | .gateway')"
-v4_target="$(podman inspect nv_compose_target | jq -er '.[0].NetworkSettings.Networks.nv_compose_target.IPAddress')"
-v6_target="$(podman inspect nv_compose_target | jq -er '.[0].NetworkSettings.Networks.nv_compose_target.GlobalIPv6Address')"
+v4_gw="$(podman network inspect nv_dual_source | jq -er '.[0].subnets[] | select(.subnet | contains(".")) | .gateway')"
+v6_gw="$(podman network inspect nv_dual_source | jq -er '.[0].subnets[] | select(.subnet | contains(":")) | .gateway')"
+v4_target="$(podman inspect nv_dual_target | jq -er '.[0].NetworkSettings.Networks.nv_dual_target.IPAddress')"
+v6_target="$(podman inspect nv_dual_target | jq -er '.[0].NetworkSettings.Networks.nv_dual_target.GlobalIPv6Address')"
 [[ "$v6_target" == *:* && "$v6_gw" == *:* ]]
 echo "IPv4 gateway $v4_gw target $v4_target; IPv6 gateway $v6_gw target $v6_target"
 
-same_bridge="$(podman run --rm --network nv_compose_target \
-  docker.io/library/alpine:3.20 wget -q -T 5 -O- http://nv_compose_target:8080/)"
-[[ "$same_bridge" == COMPOSE_DUALSTACK_OK ]] || {
+same_bridge="$(podman run "${RUN_OPTS[@]}" --rm --network nv_dual_target \
+  docker.io/library/alpine:3.20 wget -q -T 5 -O- http://nv_dual_target:8080/)"
+[[ "$same_bridge" == PODMAN_DUALSTACK_OK ]] || {
   echo "FAIL: same-bridge DNS/HTTP" >&2; exit 1;
 }
 echo "PASS: same-bridge DNS/HTTP"
-source_get() { podman exec nv_compose_source wget -q -T 5 -O- "$1"; }
+source_get() { podman exec nv_dual_source wget -q -T 5 -O- "$1"; }
 blocked() {
-  if source_get "$1" | grep -qx COMPOSE_DUALSTACK_OK; then
+  if source_get "$1" | grep -qx PODMAN_DUALSTACK_OK; then
     echo "FAIL: direct bridge isolation bypassed for $1" >&2; exit 1;
   fi
 }
@@ -206,20 +173,20 @@ check_isolation() {
   echo "PASS: direct IPv4/IPv6 bridge isolation"
 }
 published() {
-  source_get "http://$v4_gw:18111/" | grep -qx COMPOSE_DUALSTACK_OK || {
+  source_get "http://$v4_gw:18111/" | grep -qx PODMAN_DUALSTACK_OK || {
     echo "FAIL: IPv4 cross-bridge published port" >&2; exit 1; }
-  source_get "http://[$v6_gw]:18112/" | grep -qx COMPOSE_DUALSTACK_OK || {
+  source_get "http://[$v6_gw]:18112/" | grep -qx PODMAN_DUALSTACK_OK || {
     echo "FAIL: IPv6 cross-bridge published port" >&2; exit 1; }
-  echo "PASS: IPv4/IPv6 host-published ports across isolated Compose bridges"
+  echo "PASS: IPv4/IPv6 host-published ports across isolated Podman bridges"
 }
 check_isolation
 if [[ "$MODE" == upgrade ]]; then
   echo "=== NEGATIVE CONTROL: stock Netavark before candidate upgrade ==="
   # Verify the published ports work from the host itself, otherwise failure
   # from the source container could mean a broken HTTP service, not isolation.
-  curl --noproxy '*' -fsS -g --connect-timeout 3 --max-time 8     "http://$v4_gw:18111/" | grep -qx COMPOSE_DUALSTACK_OK || {
+  curl --noproxy '*' -fsS -g --connect-timeout 3 --max-time 8     "http://$v4_gw:18111/" | grep -qx PODMAN_DUALSTACK_OK || {
       echo "FAIL: stock IPv4 published port is unreachable from host"; exit 1; }
-  curl --noproxy '*' -fsS -g --connect-timeout 3 --max-time 8     "http://[$v6_gw]:18112/" | grep -qx COMPOSE_DUALSTACK_OK || {
+  curl --noproxy '*' -fsS -g --connect-timeout 3 --max-time 8     "http://[$v6_gw]:18112/" | grep -qx PODMAN_DUALSTACK_OK || {
       echo "FAIL: stock IPv6 published port is unreachable from host"; exit 1; }
   echo "PASS: stock host namespace can access both published ports"
 
@@ -234,11 +201,11 @@ if [[ "$MODE" == upgrade ]]; then
       cat "$WORK/before-${proto}.out" >&2
       exit 1
     fi
-    echo "PASS: before patch, $proto source Compose service CANNOT reach target published port"
+    echo "PASS: before patch, $proto source container CANNOT reach target published port"
   done
-  echo "=== Install patched package with two existing Compose services ==="
+  echo "=== Install patched package with two existing containers ==="
   install_candidate
-  compose restart target
+  podman restart nv_dual_target
   ready
   check_isolation
 fi
@@ -253,4 +220,4 @@ published
 if [[ "$MODE" == upgrade ]]; then
   echo "PASS: before-patch IPv4+IPv6 DENIED -> after-patch IPv4+IPv6 ALLOWED"
 fi
-echo "PASS: two Compose services in $MODE mode, including IPv6"
+echo "PASS: two containers in $MODE mode, including IPv6"
