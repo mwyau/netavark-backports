@@ -6,7 +6,7 @@ from pathlib import Path
 import subprocess
 import sys
 
-manifest = Path(__file__).resolve().parent.parent / "release/versions.json"
+manifest = Path(__file__).with_name("versions.json")
 versions = json.loads(manifest.read_text())
 
 

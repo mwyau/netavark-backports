@@ -9,10 +9,9 @@ on:
 permissions:
   contents: read
 
-# Never cancel an in-progress main-branch draft release.
 concurrency:
   group: netavark-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: true
 
 jobs:
   plan:
@@ -34,15 +33,15 @@ jobs:
           fetch-depth: 0
       - name: Check version ordering and release scripts
         run: |
-          python3 -m py_compile scripts/versions.py scripts/ci/plan.py scripts/ci/release.py scripts/ci/run.py scripts/ci/propose-updates.py
-          bash -n scripts/native/*.sh
+          python3 -m py_compile release/versions.py scripts/plan.py release/release.py scripts/run.py scripts/propose-updates.py
+          bash -n scripts/*.sh
           python3 tests/ci.py
       - name: Find most recent release snapshot
         id: base
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          tag="$(python3 scripts/ci/release.py latest)"
+          tag="$(python3 release/release.py latest)"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           if [[ "${{ github.ref }}" == refs/heads/main && -n "$tag" ]]; then
             sha="$(gh release view "$tag" --json targetCommitish --jq .targetCommitish)"
@@ -58,7 +57,7 @@ jobs:
         id: plan
         env:
           EVENT_NAME: ${{ github.ref == 'refs/heads/main' && 'push' || github.event_name }}
-        run: python3 scripts/ci/plan.py
+        run: python3 scripts/plan.py
 
   deb:
     name: deb / ${{ matrix.os }}-${{ matrix.suite }} / ${{ matrix.arch }}
@@ -80,7 +79,7 @@ jobs:
         env:
           SUITE: ${{ matrix.suite }}
           EXPECTED_ARCH: ${{ matrix.arch }}
-        run: python3 scripts/ci/run.py deb
+        run: python3 scripts/run.py deb
       - name: Upload native Debian source package
         if: success() && matrix.arch == 'amd64' && matrix.suite != 'experimental'
         uses: actions/upload-artifact@v7
@@ -120,7 +119,7 @@ jobs:
           RPM_PLATFORM: ${{ matrix.platform }}
           RPM_IMAGE: ${{ matrix.image }}
           RPM_ARCH: ${{ matrix.arch }}
-        run: python3 scripts/ci/run.py rpm
+        run: python3 scripts/run.py rpm
       - name: Upload native source RPM
         if: success() && matrix.arch == 'x86_64'
         uses: actions/upload-artifact@v7
@@ -156,7 +155,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           BASE_TAG: ${{ needs.plan.outputs.base_tag }}
-        run: python3 scripts/ci/release.py prepare incoming candidate
+        run: python3 release/release.py prepare incoming candidate
       - name: Preserve the exact validated release candidate
         uses: actions/upload-artifact@v7
         with:
@@ -185,7 +184,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           BASE_TAG: ${{ needs.plan.outputs.base_tag }}
-        run: python3 scripts/ci/release.py draft candidate
+        run: python3 release/release.py draft candidate
 
   merge-update:
     name: Merge tested source updates

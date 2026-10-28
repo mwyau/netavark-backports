@@ -49,13 +49,13 @@ jobs:
           case "$FAMILY" in
             debian|ubuntu)
               docker run "${common[@]}" -e "SUITE=$TARGET" -e EXPECTED_ARCH=amd64 \
-                "$IMAGE" bash /work/scripts/native/deb.sh ;;
+                "$IMAGE" bash /work/scripts/deb.sh ;;
             fedora)
               docker run "${common[@]}" -e "FEDORA_RELEASE=$TARGET" -e EXPECTED_ARCH=x86_64 \
-                "$IMAGE" bash /work/scripts/native/fedora.sh ;;
+                "$IMAGE" bash /work/scripts/fedora.sh ;;
             opensuse)
               docker run "${common[@]}" -e "LEAP_VERSION=$TARGET" -e EXPECTED_ARCH=x86_64 \
-                "$IMAGE" bash /work/scripts/native/opensuse.sh ;;
+                "$IMAGE" bash /work/scripts/opensuse.sh ;;
             *) exit 2 ;;
           esac
       - name: Upload discovered native source
@@ -88,4 +88,4 @@ jobs:
       - name: Create/update per-distribution review PRs
         env:
           GH_TOKEN: ${{ github.token }}
-        run: python3 scripts/ci/propose-updates.py
+        run: python3 scripts/propose-updates.py

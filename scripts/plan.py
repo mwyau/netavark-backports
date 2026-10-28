@@ -57,18 +57,18 @@ def affected_by_files(paths: set[str], current: dict) -> tuple[set[str], set[str
             if not relevant:
                 raise ValueError(f"{path}: no distribution uses this patch family")
             packaging |= relevant
-        elif path == "scripts/native/deb.sh":
+        elif path == "scripts/deb.sh":
             packaging |= set(DEB)
-        elif path == "scripts/native/fedora.sh":
+        elif path == "scripts/fedora.sh":
             packaging |= {key for key in RPM if key.startswith("fedora/")}
-        elif path == "scripts/native/opensuse.sh":
+        elif path == "scripts/opensuse.sh":
             packaging |= {key for key in RPM if key.startswith("opensuse/")}
-        elif path == "scripts/native/ports.sh":
+        elif path == "scripts/ports.sh":
             all_targets |= set(DEB) - {"debian/experimental"}
-        elif path == "scripts/native/dualstack.sh":
+        elif path == "scripts/dualstack.sh":
             all_targets |= RELEASE
-        elif path in {"scripts/ci/run.py", "scripts/ci/plan.py",
-                      "scripts/versions.py", ".github/workflows/ci.yml"}:
+        elif path in {"scripts/run.py", "scripts/plan.py",
+                      "release/versions.py", ".github/workflows/ci.yml"}:
             all_targets |= ALL
     return all_targets | packaging, packaging
 

@@ -12,7 +12,7 @@ import tarfile
 import tempfile
 from datetime import datetime, timezone
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 from versions import deb_version
 
 

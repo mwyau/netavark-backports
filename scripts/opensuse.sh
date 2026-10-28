@@ -13,7 +13,7 @@ esac
 zypper --non-interactive --gpg-auto-import-keys refresh
 zypper --non-interactive install --no-recommends \
   rpm-build patch python3 findutils tar gzip
-REVISION="$(python3 /work/scripts/versions.py --revision opensuse "$LEAP_VERSION")"
+REVISION="$(python3 /work/release/versions.py --revision opensuse "$LEAP_VERSION")"
 zypper --non-interactive addrepo -f \
   "https://download.opensuse.org/source/distribution/leap/$LEAP_VERSION/repo/oss/" netavark-native-source
 zypper --non-interactive --gpg-auto-import-keys refresh
@@ -24,7 +24,7 @@ spec="$top/SPECS/netavark.spec"
 source_version="$(rpm -q --define 'default_firewall_backend nftables' --specfile --qf '%{VERSION}\n' "$spec" | head -n1)"
 native_release="$(rpm -q --define 'default_firewall_backend nftables' --specfile --qf '%{RELEASE}\n' "$spec" | head -n1)"
 [[ -n "$native_release" && "$native_release" != "(none)" ]] || exit 1
-python3 /work/scripts/versions.py opensuse "$LEAP_VERSION" "$source_version-$native_release"
+python3 /work/release/versions.py opensuse "$LEAP_VERSION" "$source_version-$native_release"
 if [[ "${SOURCE_CHECK_ONLY:-0}" == 1 ]]; then
   echo "Current native source matches release/versions.json: opensuse/$LEAP_VERSION"
   exit 0

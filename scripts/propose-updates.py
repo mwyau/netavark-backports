@@ -27,7 +27,7 @@ def propose(path: Path) -> None:
     version = path.read_text().strip()
     branch = f"bot/update-{family}-{target}"
     command("git", "switch", "-C", branch, "origin/main")
-    command(sys.executable, "scripts/versions.py", "--update", family, target, version)
+    command(sys.executable, "release/versions.py", "--update", family, target, version)
     if subprocess.run(["git", "diff", "--quiet", "--", str(MANIFEST)]).returncode == 0:
         print(f"No change: {family}/{target}")
         return

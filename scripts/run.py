@@ -6,7 +6,7 @@ from pathlib import Path
 import subprocess
 import sys
 
-ROOT = Path(os.environ.get("GITHUB_WORKSPACE", Path(__file__).resolve().parents[2]))
+ROOT = Path(os.environ.get("GITHUB_WORKSPACE", Path(__file__).resolve().parents[1]))
 
 
 def required(*names: str) -> list[str]:
@@ -34,7 +34,7 @@ def docker(image: str, script: str, *, runtime: bool = False,
 
 def revision(family: str, target: str) -> str:
     return subprocess.check_output(
-        [sys.executable, str(ROOT / "scripts/versions.py"), "--revision", family, target],
+        [sys.executable, str(ROOT / "release/versions.py"), "--revision", family, target],
         text=True,
     ).strip()
 
@@ -53,7 +53,7 @@ def test(image: str, output: Path, script: str, variable: str,
         env = {variable: mode}
         if rev is not None:
             env["REVISION"] = rev
-        docker(image, f"/work/scripts/native/{script}", runtime=True, volumes=volumes, **env)
+        docker(image, f"/work/scripts/{script}", runtime=True, volumes=volumes, **env)
 
 
 def deb() -> None:
@@ -66,7 +66,7 @@ def deb() -> None:
     else:
         sys.exit(f"Unsupported suite: {suite}")
     rev = revision(family, suite)
-    docker(image, "/work/scripts/native/deb.sh",
+    docker(image, "/work/scripts/deb.sh",
            SUITE=suite, EXPECTED_ARCH=arch, REVISION=rev)
     output = ROOT / "dist" / suite / arch
     package = one_package(output, f"netavark_*_{arch}.deb")
@@ -98,7 +98,7 @@ def rpm() -> None:
     else:
         sys.exit(f"Unsupported RPM platform: {platform}")
     rev = revision(family, target)
-    docker(image, f"/work/scripts/native/{script}",
+    docker(image, f"/work/scripts/{script}",
            **{variable: target, "EXPECTED_ARCH": arch, "REVISION": rev})
     output = ROOT / "dist" / platform / arch
     one_package(output, "netavark-*.rpm")
@@ -110,7 +110,7 @@ def rpm() -> None:
 
 
 if __name__ == "__main__":
-    if not (ROOT / "scripts/native").is_dir():
+    if not (ROOT / "scripts").is_dir():
         sys.exit(f"Missing native scripts in {ROOT}")
     if sys.argv[1:] == ["deb"]:
         deb()
