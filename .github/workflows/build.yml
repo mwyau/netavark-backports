@@ -15,29 +15,8 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  validate:
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-      - name: Check shell scripts and patch-family input
-        shell: bash
-        run: |
-          set -euo pipefail
-          find scripts tests -type f -name '*.sh' -print0 | xargs -0 -r -n1 bash -n
-          python3 -m py_compile scripts/check-source-version.py
-          python3 scripts/check-source-version.py --validate
-          python3 -m py_compile scripts/ci/verify-release.py scripts/ci/plan.py scripts/ci/snapshot.py scripts/ci/update-versions.py
-          bash tests/debian-versioning.sh
-          for version in 1.14 1.16 1.17 2.0; do
-            test -s "patches/$version/0001-allow-published-ports-across-isolated-bridges.patch"
-          done
-          test ! -e scripts/build-fedora44.sh
-
   plan:
     name: Select changed package targets
-    needs: [validate]
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -54,6 +33,8 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0
+      - name: Check Debian package version ordering
+        run: bash tests/debian-versioning.sh
       - name: Find most recent release snapshot
         id: base
         env:

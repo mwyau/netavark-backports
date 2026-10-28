@@ -14,11 +14,10 @@ netavark_source_family() {
 }
 
 netavark_downstream_version() {
-  local base="$1" revision="$2" suite="$3" version
+  local base="$1" revision="$2" version
   [[ "$revision" =~ ^[1-9][0-9]*$ ]] || { echo "Invalid revision" >&2; return 2; }
-  [[ "$suite" =~ ^[a-z][a-z0-9]*$ ]] || { echo "Invalid suite" >&2; return 2; }
   dpkg --validate-version "$base"
-  version="${base}a~xddd${revision}~${suite}"
+  version="${base}localxddd${revision}"
   dpkg --validate-version "$version"
   dpkg --compare-versions "$version" gt "$base" || {
     echo "Downstream package must supersede the exact native source" >&2
