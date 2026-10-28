@@ -216,13 +216,14 @@ jobs:
       - name: Merge an unchanged, tested bot PR
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
           BRANCH: ${{ github.ref_name }}
           EXPECTED_SHA: ${{ github.sha }}
         run: |
-          number="$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number // empty')"
+          number="$(gh pr list --repo "$GH_REPO" --head "$BRANCH" --state open --json number --jq '.[0].number // empty')"
           [[ -n "$number" ]] || { echo "Missing open update PR" >&2; exit 1; }
-          head="$(gh pr view "$number" --json headRefOid --jq .headRefOid)"
+          head="$(gh pr view "$number" --repo "$GH_REPO" --json headRefOid --jq .headRefOid)"
           [[ "$head" == "$EXPECTED_SHA" ]] || { echo "Bot branch changed during CI" >&2; exit 1; }
-          files="$(gh pr diff "$number" --name-only)"
+          files="$(gh pr diff "$number" --repo "$GH_REPO" --name-only)"
           [[ "$files" == release/versions.json ]] || { echo "Unexpected bot PR files: $files" >&2; exit 1; }
-          gh pr merge "$number" --squash --delete-branch
+          gh pr merge "$number" --repo "$GH_REPO" --squash --delete-branch
