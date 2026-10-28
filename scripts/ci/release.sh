@@ -70,7 +70,11 @@ previous="$(gh release list --repo "$repo" --limit 1000 --json tagName --jq '.[]
 if [[ -n "$previous" ]]; then
   old="$(gh release view "$previous" --repo "$repo" --json targetCommitish --jq .targetCommitish)"
   if [[ "$old" =~ ^[0-9a-f]{40}$ ]] && git cat-file -e "$old^{commit}" 2>/dev/null; then
-    changes="$(git diff --name-only "$old" "$GITHUB_SHA" -- patches scripts tests release .github/workflows || true)"
+    # Ignore release documentation and source-monitoring-only changes.
+    # Changes to packaging inputs, tests or release assembly require a new revision.
+    changes="$(git diff --name-only "$old" "$GITHUB_SHA" -- \
+      patches scripts/build scripts/ci scripts/deb-version.sh scripts/check-source-version.py \
+      tests release/revision.txt release/source-versions.json .github/workflows/build.yml || true)"
     if [[ -z "$changes" ]]; then
       echo "Revision xddd$REVISION already has $previous; only docs changed, no new draft"
       exit 0
