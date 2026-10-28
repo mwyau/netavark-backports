@@ -93,8 +93,7 @@ jobs:
     if: needs.validate.result == 'success'
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 180
-    # Leap is experimental until native backport builds and dual-stack tests pass.
-    continue-on-error: ${{ startsWith(matrix.platform, 'leap') }}
+    # All supported RPM targets must pass their network tests.
     permissions:
       contents: read
     strategy:
