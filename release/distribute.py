@@ -91,6 +91,20 @@ def changed_targets(current: dict, previous: dict | None, destination: str) -> l
     return result
 
 
+
+def check_environments(repo: str) -> None:
+    """Fail closed if destination approval protections are not configured."""
+    for name in TARGETS:
+        settings = json.loads(gh("api", f"repos/{repo}/environments/{name}"))
+        rules = settings.get("protection_rules") or []
+        reviewers = [rule for rule in rules if rule.get("type") == "required_reviewers"
+                     and rule.get("reviewers")]
+        if not reviewers:
+            sys.exit(f"{name}: required environment reviewers must be configured")
+        policy = settings.get("deployment_branch_policy") or {}
+        if not (policy.get("protected_branches") or policy.get("custom_branch_policies")):
+            sys.exit(f"{name}: restrict deployments to the protected main branch")
+
 def plan(tag: str, repo: str) -> dict:
     sha = release_info(tag, repo)
     if tag != latest_published(repo):
@@ -195,8 +209,8 @@ def submit_copr(assets: Path, targets: list[str]) -> None:
 def submit_obs(assets: Path, targets: list[str]) -> None:
     config = required("OBS_CONFIG")
     projects = {
-        "16.0": required("OBS_PROJECT_16_0"),
-        "16.1": required("OBS_PROJECT_16_1"),
+        leap: required("OBS_PROJECT_" + leap.replace(".", "_"))
+        for leap in {target.split("/")[1] for target in targets}
     }
     with tempfile.TemporaryDirectory() as home:
         config_dir = Path(home) / ".config" / "osc"
@@ -248,6 +262,8 @@ def main() -> None:
     repo = os.environ["GITHUB_REPOSITORY"]
     tag = os.environ["RELEASE_TAG"]
     if sys.argv[1:] == ["plan"]:
+        if os.environ.get("DISTRIBUTION_ENABLED") == "true":
+            check_environments(repo)
         result = plan(tag, repo)
         with Path(os.environ["GITHUB_OUTPUT"]).open("a") as file:
             for key, value in result.items():

@@ -23,6 +23,7 @@ jobs:
     permissions:
       contents: read
       deployments: read
+      actions: read
     outputs:
       url: ${{ steps.plan.outputs.url }}
       ppa: ${{ steps.plan.outputs.ppa }}
@@ -41,6 +42,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ inputs.tag }}
+          DISTRIBUTION_ENABLED: ${{ vars.DISTRIBUTION_ENABLED }}
         run: python3 release/distribute.py plan
 
   ppa:
