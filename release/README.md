@@ -14,7 +14,7 @@ The [daily source check](../.github/workflows/upstream.yml) reads the native sou
 
 ## Build and test
 
-Version selection and downstream DEB naming are implemented in `scripts/versions.py`. Native distro builds and Podman tests remain shell scripts.
+Version selection and downstream DEB naming are implemented in `scripts/versions.py`; release assembly, verification and publication use `scripts/ci/release.py`. Native distro builds and Podman tests remain shell scripts.
 
 The main [workflow](../.github/workflows/ci.yml) runs on pull requests and pushes to `main`. PRs compile and test the targets affected by source locks, patches, build scripts or networking tests. On `main`, only targets whose reviewed source or revision differs from the most recent release snapshot are rebuilt. Each affected target builds on both architectures. If no snapshot exists yet, all targets are built.
 

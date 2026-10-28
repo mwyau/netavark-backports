@@ -52,6 +52,32 @@ else:
     raise AssertionError("A new native source must reset revision to 1")
 new["debian"]["trixie"] = {"source": "1.14.0-2", "revision": 5}
 assert select(old, new, set(), "push")[1] == {"debian/trixie"}
+
+# Verify release filenames, distribution labels and assembled SHA256SUMS.
+import tempfile
+release = runpy.run_path("scripts/ci/release.py")
+all_versions = json.loads(Path("release/versions.json").read_text())
+assets = release["assets_by_target"](all_versions)
+assert len(release["expected_assets"](all_versions)) == 28
+assert "netavark_1.17.2-3xddd1~forky_amd64.deb" in assets["debian/forky"]
+assert "netavark_1.16.1-3.1ppaxddd1~resolute_arm64.deb" in assets["ubuntu/resolute"]
+assert release["asset_label"]("netavark-1.17.2-1.xddd1.fc43.x86_64.rpm",
+                             all_versions) == "Fedora 43 — x86_64"
+with tempfile.TemporaryDirectory() as temp:
+    incoming, candidate = Path(temp) / "incoming", Path(temp) / "candidate"
+    for target, filenames in assets.items():
+        for name in filenames:
+            if name.endswith(".tar.gz"):
+                suite = target.split("/")[1]
+                source = incoming / f"source-deb-{suite}"
+                source.mkdir(parents=True, exist_ok=True)
+                (source / "netavark_dummy.dsc").write_text("dsc")
+                (source / "netavark_dummy_source.changes").write_text("changes")
+            else:
+                incoming.mkdir(parents=True, exist_ok=True)
+                (incoming / name).write_bytes(name.encode())
+    release["assemble"](incoming, candidate, None)
+    release["verify"](candidate, Path("release/versions.json"))
 PY
 # Names must stay distinct even if Debian testing and unstable use the same source.
 [[ "$(version 1.17.2-3 1 forky)" != "$(version 1.17.2-3 1 sid)" ]]
