@@ -152,27 +152,38 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-  draft-release:
-    name: Verify artifacts and prepare main-branch draft
+  verify-release:
+    name: Verify complete release candidate
     needs: [validate, deb, rpm]
     if: always() && needs.validate.result == 'success' && needs.deb.result == 'success' && needs.rpm.result == 'success'
     runs-on: ubuntu-24.04
     permissions:
-      contents: ${{ github.event_name == 'push' && 'write' || 'read' }}
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v8
+        with:
+          path: incoming
+      - run: bash scripts/ci/release.sh verify incoming
+
+  draft-release:
+    name: Create draft on validated main
+    needs: [verify-release]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.verify-release.result == 'success'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
           fetch-depth: 0
-      - name: Download validated artifacts from this run
-        uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@v8
         with:
           path: incoming
-      - name: Verify release asset set (PR does not publish)
-        if: github.event_name == 'pull_request'
-        run: bash scripts/ci/release.sh verify incoming
-      - name: Create unpublished draft from validated main build
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+      - name: Create unpublished release draft
         env:
           GH_TOKEN: ${{ github.token }}
         run: bash scripts/ci/release.sh create incoming
