@@ -35,7 +35,7 @@ jobs:
       - name: Check version ordering and release scripts
         run: |
           python3 -m py_compile scripts/versions.py scripts/ci/plan.py scripts/ci/release.py scripts/ci/run.py scripts/ci/propose-updates.py
-          bash -n scripts/build/*.sh tests/*.sh
+          bash -n scripts/native/*.sh
           python3 tests/ci.py
       - name: Find most recent release snapshot
         id: base

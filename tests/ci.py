@@ -55,7 +55,7 @@ def check_plan(manifest: dict) -> None:
     else:
         raise AssertionError("A changed patch must increment affected revisions")
     assert not plan(manifest, manifest, {"tests/ci.py"}, "pull_request")[0]
-    assert plan(manifest, manifest, {"tests/ports.sh"}, "pull_request")[0] == {
+    assert plan(manifest, manifest, {"scripts/native/ports.sh"}, "pull_request")[0] == {
         "debian/trixie", "debian/forky", "debian/sid",
         "ubuntu/resolute", "ubuntu/stonking",
     }

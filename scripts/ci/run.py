@@ -48,12 +48,12 @@ def one_package(output: Path, pattern: str) -> Path:
 
 def test(image: str, output: Path, script: str, variable: str,
          modes: tuple[str, ...], rev: str | None = None) -> None:
-    volumes = (f"{output}:/packages:ro", f"{ROOT / 'tests'}:/tests:ro")
+    volumes = (f"{output}:/packages:ro",)
     for mode in modes:
         env = {variable: mode}
         if rev is not None:
             env["REVISION"] = rev
-        docker(image, f"/tests/{script}", runtime=True, volumes=volumes, **env)
+        docker(image, f"/work/scripts/native/{script}", runtime=True, volumes=volumes, **env)
 
 
 def deb() -> None:
@@ -66,7 +66,7 @@ def deb() -> None:
     else:
         sys.exit(f"Unsupported suite: {suite}")
     rev = revision(family, suite)
-    docker(image, "/work/scripts/build/deb.sh",
+    docker(image, "/work/scripts/native/deb.sh",
            SUITE=suite, EXPECTED_ARCH=arch, REVISION=rev)
     output = ROOT / "dist" / suite / arch
     package = one_package(output, f"netavark_*_{arch}.deb")
@@ -98,7 +98,7 @@ def rpm() -> None:
     else:
         sys.exit(f"Unsupported RPM platform: {platform}")
     rev = revision(family, target)
-    docker(image, f"/work/scripts/build/{script}",
+    docker(image, f"/work/scripts/native/{script}",
            **{variable: target, "EXPECTED_ARCH": arch, "REVISION": rev})
     output = ROOT / "dist" / platform / arch
     one_package(output, "netavark-*.rpm")
@@ -110,8 +110,8 @@ def rpm() -> None:
 
 
 if __name__ == "__main__":
-    if not (ROOT / "tests").is_dir():
-        sys.exit(f"Missing test files in {ROOT}")
+    if not (ROOT / "scripts/native").is_dir():
+        sys.exit(f"Missing native scripts in {ROOT}")
     if sys.argv[1:] == ["deb"]:
         deb()
     elif sys.argv[1:] == ["rpm"]:

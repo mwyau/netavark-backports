@@ -49,13 +49,13 @@ jobs:
           case "$FAMILY" in
             debian|ubuntu)
               docker run "${common[@]}" -e "SUITE=$TARGET" -e EXPECTED_ARCH=amd64 \
-                "$IMAGE" bash /work/scripts/build/deb.sh ;;
+                "$IMAGE" bash /work/scripts/native/deb.sh ;;
             fedora)
               docker run "${common[@]}" -e "FEDORA_RELEASE=$TARGET" -e EXPECTED_ARCH=x86_64 \
-                "$IMAGE" bash /work/scripts/build/fedora.sh ;;
+                "$IMAGE" bash /work/scripts/native/fedora.sh ;;
             opensuse)
               docker run "${common[@]}" -e "LEAP_VERSION=$TARGET" -e EXPECTED_ARCH=x86_64 \
-                "$IMAGE" bash /work/scripts/build/opensuse.sh ;;
+                "$IMAGE" bash /work/scripts/native/opensuse.sh ;;
             *) exit 2 ;;
           esac
       - name: Upload discovered native source

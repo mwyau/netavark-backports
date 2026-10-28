@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Native-package network regression for Arch and openSUSE. No custom packages.
+# Stock-distribution networking probe; no custom packages.
 # Platform provided via TEST_PLATFORM=arch|tumbleweed|leap16|leap161|fedora43|fedora44
 set -Eeuo pipefail
 export NETAVARK_FW=nftables
