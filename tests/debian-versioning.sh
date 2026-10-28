@@ -29,4 +29,25 @@ if netavark_source_family '1.18.0-1'; then
   echo 'FAIL: unsupported family must not silently reuse an older patch' >&2
   exit 1
 fi
+# New native source versions reset the independent downstream revision to xddd1.
+dpkg --compare-versions '1.14.0-2+deb13u1a~xddd1~trixie' gt '1.14.0-2a~xddd9~trixie'
+dpkg --compare-versions '1.14.0-2+deb13u2' gt '1.14.0-2+deb13u1a~xddd9~trixie'
+python3 - <<'PY'
+import runpy
+
+select = runpy.run_path("scripts/ci/plan.py")["plan"]
+old = {"schema": 1, "debian": {"trixie": {"source": "1.14.0-2", "revision": 4}}}
+new = {"schema": 1, "debian": {"trixie": {"source": "1.14.0-2+deb13u1", "revision": 1}}}
+targets, versions = select(old, new, set(), "push")
+assert targets == versions == {"debian/trixie"}
+new["debian"]["trixie"]["revision"] = 2
+try:
+    select(old, new, set(), "push")
+except ValueError:
+    pass
+else:
+    raise AssertionError("A new native source must reset revision to 1")
+new["debian"]["trixie"] = {"source": "1.14.0-2", "revision": 5}
+assert select(old, new, set(), "push")[1] == {"debian/trixie"}
+PY
 echo "PASS: a~xddd version sorting, security upgrade ordering and fail-closed families"

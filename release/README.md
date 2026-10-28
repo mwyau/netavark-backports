@@ -8,13 +8,13 @@ Each distro is built from its own source package, with the relevant patch from `
 
 When the distribution publishes a new source revision, review its changes and update that entry in a pull request. Adjust the patch if needed. The scripts reject unexpected source versions rather than quietly rebuilding from a different base.
 
-Each distribution release has an independent `revision` integer in [`versions.json`](versions.json), initially `1`. It produces `xddd1` in the native package version. Increase **only the affected distribution's** revision when rebuilding or changing its backport. Both architectures of one distribution release share this revision. A CI rerun or documentation change does not increase package revisions.
+Each distribution release has an independent `revision` integer in [`versions.json`](versions.json), initially `1`. It produces `xddd1` in the native package version. If the native source changes, reset that distribution's revision to `1`; otherwise increase **only the affected distribution's** revision when rebuilding or changing its backport. Both architectures of one distribution release share this revision. A CI rerun or documentation change does not increase package revisions.
 
-The [daily source check](../.github/workflows/check-upstream.yml) compares current native sources against reviewed `source` values without changing the manifest or publishing packages. Review upstream changes and adjust the patch before updating a locked source version. Ubuntu Stonking 1.17.2-2 needs two obsolete native prost/mozim downgrade patches excluded to build against the distribution's current Rust packages (Debian bug #1145651). This is separate from the nftables fix.
+The [daily source check](../.github/workflows/check-upstream.yml) reads the native sources, including Debian Trixie's security and updates pockets, and opens or refreshes a draft review PR for each changed distro target. Each proposal resets its downstream revision to `1` and dispatches native CI; it never automatically merges or publishes. If repository settings prevent Actions from creating PRs, enable that permission first. Review upstream changes and adjust the patch before updating a locked source version. Ubuntu Stonking 1.17.2-2 needs two obsolete native prost/mozim downgrade patches excluded to build against the distribution's current Rust packages (Debian bug #1145651). This is separate from the nftables fix.
 
 ## Build and test
 
-The main [workflow](../.github/workflows/build.yml) runs on pull requests and pushes to `main`. The Debian/Ubuntu and RPM matrices compile the native packages and run Podman networking regressions on their target architectures.
+The main [workflow](../.github/workflows/build.yml) runs on pull requests and pushes to `main`. PRs compile and test the targets affected by source locks, patches, build scripts or networking tests. On `main`, only targets whose reviewed source or revision differs from the most recent release snapshot are rebuilt. Each affected target builds on both architectures. If no snapshot exists yet, all targets are built.
 
 The key test checks two Podman containers on isolated IPv4/IPv6 bridges, first with the original package, then after upgrading Netavark while the networks remain in place. The published host ports must work after the upgrade, and direct cross-bridge traffic must remain isolated.
 
@@ -30,11 +30,11 @@ Only one source artifact per distro release is uploaded, from the x86-64/AMD64 b
 
 ## Draft GitHub releases
 
-Once all required checks pass on `main`, the workflow collects the artifacts **from that same CI run** and creates a draft GitHub Release for a new reviewed package revision. Pull requests run the same asset assembly and verification without creating a release.
+Once the selected build checks pass on `main`, a changed release-target version or revision creates a draft GitHub Release. The candidate combines **newly tested packages from that CI run** with unchanged assets from the latest draft or published release. The previous release and final complete snapshot are checked against their manifests and SHA256SUMS. Pull requests verify the candidate without creating a release. Documentation-only changes do not rebuild packages or create drafts.
 
 The draft contains 10 Debian/Ubuntu DEBs, 4 Fedora RPMs and 4 Leap RPMs, their 9 native source bundles/RPMs, `versions.json` and `SHA256SUMS`. Debian Experimental remains build-only.
 
-Tags use `netavark-YYYYMMDD.N` (UTC candidate date and a per-day sequence starting at 1), independently of distribution package revisions. For example, `netavark-20261028.1`. The draft records the exact tested main-branch commit in its target and release notes. Its name does not change if approved on a later day. The Git tag is created when the draft is published. No new draft is created for documentation-only changes or when reviewed package revisions have not changed. A rerun verifies that an existing release is complete.
+Tags use `netavark-YYYYMMDD.N` (UTC candidate date and a per-day sequence starting at 1), independently of distribution package revisions. For example, `netavark-20261028.1`. The draft records the exact tested main-branch commit in its target and release notes. Its name does not change if approved on a later day. The Git tag is created when the draft is published. No new draft is created for documentation-only changes or when reviewed package revisions have not changed. The initial release builds every target; later snapshots reuse unchanged bytes and checksums. A rerun verifies that an existing release is complete.
 
 ## Approve GitHub publication
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Native openSUSE Leap source RPM builder. Experimental until both arches pass.
+# Native openSUSE Leap 16.0/16.1 source RPM builder.
 set -Eeuo pipefail
 LEAP_VERSION="${LEAP_VERSION:?expected 16.0 or 16.1}"
 EXPECTED_ARCH="${EXPECTED_ARCH:?x86_64 or aarch64}"

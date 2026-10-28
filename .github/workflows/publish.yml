@@ -41,6 +41,22 @@ jobs:
         run: |
           set -Eeuo pipefail
           [[ "$RELEASE_TAG" =~ ^netavark-[0-9]{8}\.[1-9][0-9]*$ ]]
+          latest="$(gh release list --repo "$GH_REPO" --limit 1000 --json tagName --jq '.[].tagName' |
+            grep -E '^netavark-[0-9]{8}\.[1-9][0-9]* "$RELEASE_TAG" --repo "$GH_REPO" --json isDraft,isPrerelease \
+            --jq 'select(.isDraft == true and .isPrerelease == true)' | grep -q .
+          target="$(gh release view "$RELEASE_TAG" --repo "$GH_REPO" --json targetCommitish --jq .targetCommitish)"
+          [[ "$target" =~ ^[0-9a-f]{40}$ ]]
+          git merge-base --is-ancestor "$target" HEAD
+          # GitHub creates the missing release tag when a draft is published;
+          # drafts with a target commit do not require a pre-existing Git ref.
+          gh release download "$RELEASE_TAG" --repo "$GH_REPO" --dir incoming
+          git show "$target:release/versions.json" > reviewed-versions.json
+          python3 scripts/ci/verify-release.py incoming reviewed-versions.json
+          gh release edit "$RELEASE_TAG" --repo "$GH_REPO" --draft=false --prerelease=false
+ | head -n1)"
+          [[ "$RELEASE_TAG" == "$latest" ]] || {
+            echo "Refusing to publish a superseded draft: $RELEASE_TAG" >&2; exit 1;
+          }
           gh release view "$RELEASE_TAG" --repo "$GH_REPO" --json isDraft,isPrerelease \
             --jq 'select(.isDraft == true and .isPrerelease == true)' | grep -q .
           target="$(gh release view "$RELEASE_TAG" --repo "$GH_REPO" --json targetCommitish --jq .targetCommitish)"
