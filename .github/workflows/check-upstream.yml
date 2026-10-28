@@ -44,7 +44,8 @@ jobs:
         run: |
           set -euo pipefail
           common=(--rm --pull=always -v "$GITHUB_WORKSPACE:/work" -w /work
-            -e SOURCE_CHECK_ONLY=1)
+            -e SOURCE_CHECK_ONLY=1 -e SOURCE_DISCOVERY_ONLY=1
+            -e "SOURCE_DISCOVERY_FILE=/work/discovered/${FAMILY}-${TARGET}.txt")
           case "$FAMILY" in
             debian|ubuntu)
               docker run "${common[@]}" -e "SUITE=$TARGET" -e EXPECTED_ARCH=amd64 \
@@ -57,3 +58,35 @@ jobs:
                 "$IMAGE" bash /work/scripts/build/opensuse.sh ;;
             *) exit 2 ;;
           esac
+      - name: Upload discovered native source
+        uses: actions/upload-artifact@v7
+        with:
+          archive: false
+          name: native-${{ matrix.family }}-${{ matrix.target }}
+          path: discovered/${{ matrix.family }}-${{ matrix.target }}.txt
+          if-no-files-found: error
+          retention-days: 7
+
+  propose:
+    name: Propose changed native sources for review
+    needs: [check]
+    if: needs.check.result == 'success'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: true
+          fetch-depth: 0
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: native-*
+          merge-multiple: true
+          path: discovered
+      - name: Create/update per-distribution review PRs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/ci/propose-updates.sh
