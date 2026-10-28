@@ -20,7 +20,7 @@ elif grep -Eq '^ID="?opensuse-leap"?' /etc/os-release; then
   # Compose provider in an isolated environment; keep Podman/Netavark native.
   zypper --non-interactive install --no-recommends \
     podman netavark aardvark-dns runc curl jq nftables iproute2 python313-virtualenv
-  python3 -m virtualenv /opt/netavark-compose-venv
+  /usr/bin/python3.13 -m virtualenv /opt/netavark-compose-venv
   /opt/netavark-compose-venv/bin/python -m pip install \
     --disable-pip-version-check 'podman-compose==1.6.0'
   export PODMAN_COMPOSE_PROVIDER=/opt/netavark-compose-venv/bin/podman-compose
@@ -40,9 +40,11 @@ runroot = "/run/containers/storage"
 graphroot = "/var/lib/containers/storage"
 EOF
 if [[ "$DISTRO" == opensuse ]]; then
+  # The Docker-hosted CI container has no delegated cgroup controllers.
+  # Test rootful Netavark with runc, but without nested container cgroups.
   cat >/etc/containers/containers.conf <<'EOF'
 [containers]
-cgroups = "enabled"
+cgroups = "disabled"
 [engine]
 runtime = "runc"
 cgroup_manager = "cgroupfs"
@@ -116,7 +118,15 @@ networks:
     external: true
     name: nv_compose_target
 EOF
-compose() { podman compose -p nvdual -f "$WORK/compose.yml" "$@"; }
+compose() {
+  if [[ "$DISTRO" == opensuse ]]; then
+    # A Compose pod would require cgroup controllers in this nested runner;
+    # each service already uses its own pre-created isolated network.
+    podman compose --in-pod false -p nvdual -f "$WORK/compose.yml" "$@"
+  else
+    podman compose -p nvdual -f "$WORK/compose.yml" "$@"
+  fi
+}
 cleanup() {
   compose down --remove-orphans >/dev/null 2>&1 || :
   podman rm -f nv_compose_source nv_compose_target >/dev/null 2>&1 || :
