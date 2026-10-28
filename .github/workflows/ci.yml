@@ -43,12 +43,12 @@ jobs:
           tag="$(gh release list --limit 1000 --json tagName --jq '.[].tagName' |
             grep -E '^netavark-[0-9]{8}\.[1-9][0-9]*$' | head -n1 || true)"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
-          if [[ "${{ github.event_name }}" == push && -n "$tag" ]]; then
+          if [[ "${{ github.ref }}" == refs/heads/main && -n "$tag" ]]; then
             sha="$(gh release view "$tag" --json targetCommitish --jq .targetCommitish)"
             [[ "$sha" =~ ^[0-9a-f]{40}$ ]]
             git cat-file -e "$sha^{commit}"
             echo "BASE_REF=$sha" >> "$GITHUB_ENV"
-          elif [[ "${{ github.event_name }}" == push ]]; then
+          elif [[ "${{ github.ref }}" == refs/heads/main ]]; then
             echo "BASE_REF=" >> "$GITHUB_ENV"
           else
             echo "BASE_REF=origin/main" >> "$GITHUB_ENV"
@@ -56,7 +56,7 @@ jobs:
       - name: Calculate native build matrices
         id: plan
         env:
-          EVENT_NAME: ${{ github.event_name }}
+          EVENT_NAME: ${{ github.ref == 'refs/heads/main' && 'push' || github.event_name }}
         run: python3 scripts/ci/plan.py
 
   deb:
@@ -158,7 +158,7 @@ jobs:
   verify-release:
     name: Verify complete release candidate
     needs: [plan, deb, rpm]
-    if: always() && github.event_name == 'push' && needs.plan.outputs.release == 'true' && needs.plan.result == 'success' && (needs.deb.result == 'success' || needs.deb.result == 'skipped') && (needs.rpm.result == 'success' || needs.rpm.result == 'skipped')
+    if: always() && github.ref == 'refs/heads/main' && needs.plan.outputs.release == 'true' && needs.plan.result == 'success' && (needs.deb.result == 'success' || needs.deb.result == 'skipped') && (needs.rpm.result == 'success' || needs.rpm.result == 'skipped')
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -185,7 +185,7 @@ jobs:
   draft-release:
     name: Create draft on validated main
     needs: [plan, verify-release]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.plan.outputs.release == 'true' && needs.verify-release.result == 'success'
+    if: github.ref == 'refs/heads/main' && needs.plan.outputs.release == 'true' && needs.verify-release.result == 'success'
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -227,3 +227,5 @@ jobs:
           files="$(gh pr diff "$number" --repo "$GH_REPO" --name-only)"
           [[ "$files" == release/versions.json ]] || { echo "Unexpected bot PR files: $files" >&2; exit 1; }
           gh pr merge "$number" --repo "$GH_REPO" --squash --delete-branch
+          # GITHUB_TOKEN merges suppress push workflows; explicitly validate main.
+          gh workflow run ci.yml --repo "$GH_REPO" --ref main

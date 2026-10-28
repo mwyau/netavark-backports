@@ -69,7 +69,7 @@ jobs:
   propose:
     name: Propose changed native sources for review
     needs: [check]
-    if: needs.check.result == 'success'
+    if: always() && needs.check.result != 'cancelled'
     runs-on: ubuntu-24.04
     permissions:
       contents: write

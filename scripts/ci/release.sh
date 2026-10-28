@@ -23,7 +23,8 @@ if [[ "$mode" == verify ]]; then
   exit 0
 fi
 
-[[ "$GITHUB_EVENT_NAME" == push && "$GITHUB_REF" == refs/heads/main ]] || exit 2
+[[ "$GITHUB_REF" == refs/heads/main ]] || exit 2
+[[ "$GITHUB_EVENT_NAME" == push || "$GITHUB_EVENT_NAME" == workflow_dispatch ]] || exit 2
 : "${GH_TOKEN:?}" "${GITHUB_SHA:?}"
 python3 scripts/ci/release.py verify "$incoming"
 tags="$(gh release list --repo "$repo" --limit 1000 --json tagName --jq '.[].tagName')"
