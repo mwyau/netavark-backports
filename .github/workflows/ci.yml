@@ -158,7 +158,7 @@ jobs:
   verify-release:
     name: Verify complete release candidate
     needs: [plan, deb, rpm]
-    if: always() && needs.plan.result == 'success' && needs.plan.outputs.has_builds == 'true' && (needs.deb.result == 'success' || needs.deb.result == 'skipped') && (needs.rpm.result == 'success' || needs.rpm.result == 'skipped')
+    if: always() && github.event_name == 'push' && needs.plan.outputs.release == 'true' && needs.plan.result == 'success' && (needs.deb.result == 'success' || needs.deb.result == 'skipped') && (needs.rpm.result == 'success' || needs.rpm.result == 'skipped')
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -174,6 +174,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           BASE_TAG: ${{ needs.plan.outputs.base_tag }}
         run: bash scripts/ci/release.sh verify incoming
+      - name: Preserve the exact validated release candidate
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-candidate
+          path: candidate/*
+          if-no-files-found: error
+          retention-days: 7
 
   draft-release:
     name: Create draft on validated main
@@ -189,9 +196,10 @@ jobs:
           fetch-depth: 0
       - uses: actions/download-artifact@v8
         with:
-          path: incoming
+          name: release-candidate
+          path: candidate
       - name: Create unpublished release draft
         env:
           GH_TOKEN: ${{ github.token }}
           BASE_TAG: ${{ needs.plan.outputs.base_tag }}
-        run: bash scripts/ci/release.sh create incoming
+        run: bash scripts/ci/release.sh create candidate

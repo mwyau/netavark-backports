@@ -53,5 +53,5 @@ jobs:
           git merge-base --is-ancestor "$target" HEAD
           gh release download "$RELEASE_TAG" --repo "$GH_REPO" --dir incoming
           git show "$target:release/versions.json" > reviewed-versions.json
-          python3 scripts/ci/verify-release.py incoming reviewed-versions.json
+          python3 scripts/ci/release.py verify incoming reviewed-versions.json
           gh release edit "$RELEASE_TAG" --repo "$GH_REPO" --draft=false --prerelease=false
