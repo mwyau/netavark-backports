@@ -76,7 +76,7 @@ jobs:
         env:
           SUITE: ${{ matrix.suite }}
           EXPECTED_ARCH: ${{ matrix.arch }}
-        run: python3 scripts/run.py deb
+        run: python3 scripts/build.py deb
       - name: Upload native Debian source package
         if: success() && matrix.arch == 'amd64' && matrix.suite != 'experimental'
         uses: actions/upload-artifact@v7
@@ -116,7 +116,7 @@ jobs:
           RPM_PLATFORM: ${{ matrix.platform }}
           RPM_IMAGE: ${{ matrix.image }}
           RPM_ARCH: ${{ matrix.arch }}
-        run: python3 scripts/run.py rpm
+        run: python3 scripts/build.py rpm
       - name: Upload native source RPM
         if: success() && matrix.arch == 'x86_64'
         uses: actions/upload-artifact@v7
@@ -193,19 +193,12 @@ jobs:
       pull-requests: write
       actions: write
     steps:
-      - name: Merge an unchanged, tested bot PR
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Merge the validated source-update PR
         env:
           GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
           BRANCH: ${{ github.ref_name }}
           EXPECTED_SHA: ${{ github.sha }}
-        run: |
-          number="$(gh pr list --repo "$GH_REPO" --head "$BRANCH" --state open --json number --jq '.[0].number // empty')"
-          [[ -n "$number" ]] || { echo "Missing open update PR" >&2; exit 1; }
-          head="$(gh pr view "$number" --repo "$GH_REPO" --json headRefOid --jq .headRefOid)"
-          [[ "$head" == "$EXPECTED_SHA" ]] || { echo "Bot branch changed during CI" >&2; exit 1; }
-          files="$(gh pr diff "$number" --repo "$GH_REPO" --name-only)"
-          [[ "$files" == release/versions.json ]] || { echo "Unexpected bot PR files: $files" >&2; exit 1; }
-          gh pr merge "$number" --repo "$GH_REPO" --squash --delete-branch
-          # GITHUB_TOKEN merges suppress push workflows; explicitly validate main.
-          gh workflow run ci.yml --repo "$GH_REPO" --ref main
+        run: python3 scripts/updates.py merge

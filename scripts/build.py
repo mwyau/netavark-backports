@@ -117,4 +117,4 @@ if __name__ == "__main__":
     elif sys.argv[1:] == ["rpm"]:
         rpm()
     else:
-        sys.exit("usage: run.py deb|rpm")
+        sys.exit("usage: build.py deb|rpm")

@@ -141,6 +141,44 @@ def check_discovery(manifest: dict) -> None:
         else:
             raise AssertionError(f"Accepted invalid source: {family}/{target} {bad!r}")
 
+
+def check_merge() -> None:
+    from unittest.mock import patch
+
+    module = runpy.run_path("scripts/updates.py")
+    merge = module["merge"]
+    branch, sha = "bot/update-debian-trixie", "a" * 40
+    repo = "mwyau/netavark-backports"
+    calls = []
+
+    def fake_output(*args: str) -> str:
+        if args[1:3] == ("pr", "list"):
+            return '[{"number":1}]'
+        if args[1:3] == ("pr", "view"):
+            return json.dumps({
+                "headRefOid": sha, "headRefName": branch,
+                "baseRefName": "main", "isCrossRepository": False,
+            })
+        if args[1:3] == ("pr", "diff"):
+            return "release/versions.json"
+        raise AssertionError(args)
+
+    with patch.dict(merge.__globals__, {
+        "output": fake_output, "command": lambda *args: calls.append(args),
+    }):
+        merge(repo, branch, sha)
+        assert [args[1:3] for args in calls] == [
+            ("pr", "merge"), ("workflow", "run"),
+        ]
+        calls.clear()
+        try:
+            merge(repo, "bot/not-an-update", sha)
+        except SystemExit:
+            pass
+        else:
+            raise AssertionError("Invalid update branch accepted")
+        assert not calls
+
 if __name__ == "__main__":
     os.chdir(ROOT)
     check_scripts()
@@ -149,4 +187,5 @@ if __name__ == "__main__":
     check_discovery(current)
     check_plan(current)
     check_release(current)
-    print("PASS: script syntax, version discovery and ordering, CI planning, releases")
+    check_merge()
+    print("PASS: script syntax, version discovery and ordering, CI planning, merges, releases")

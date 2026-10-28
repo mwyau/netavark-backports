@@ -67,7 +67,7 @@ def affected_by_files(paths: set[str], current: dict) -> tuple[set[str], set[str
             all_targets |= set(DEB) - {"debian/experimental"}
         elif path == "scripts/build/dualstack.sh":
             all_targets |= RELEASE
-        elif path in {"scripts/run.py", "scripts/plan.py",
+        elif path in {"scripts/build.py", "scripts/plan.py",
                       "release/versions.py", ".github/workflows/ci.yml"}:
             all_targets |= ALL
     return all_targets | packaging, packaging

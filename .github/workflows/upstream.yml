@@ -103,4 +103,4 @@ jobs:
       - name: Create/update per-distribution review PRs
         env:
           GH_TOKEN: ${{ github.token }}
-        run: python3 scripts/propose-updates.py
+        run: python3 scripts/updates.py propose
