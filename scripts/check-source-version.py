@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Read the reviewed native source version and downstream package revision."""
 import json
+import os
 from pathlib import Path
 import sys
 
@@ -40,6 +41,14 @@ def main() -> None:
     if len(sys.argv) == 4:
         family, target, actual = sys.argv[1:]
         expected = entry(family, target)["source"]
+        discovered = os.environ.get("SOURCE_DISCOVERY_FILE")
+        if discovered:
+            output = Path(discovered)
+            output.parent.mkdir(parents=True, exist_ok=True)
+            output.write_text(actual + "\n")
+        if os.environ.get("SOURCE_DISCOVERY_ONLY") == "1":
+            print(f"Discovered native source: {family}/{target} {actual}")
+            return
         if actual != expected:
             sys.exit(
                 f"Native source update for {family}/{target}: reviewed={expected}, "

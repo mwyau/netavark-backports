@@ -83,6 +83,10 @@ done < <(apt-cache showsrc netavark | awk '/^Version: / {print $2}' | sort -u)
 dpkg --compare-versions "$BASE" ge "$MINIMUM" || {
   echo "FAIL: distro Netavark $BASE older than required $MINIMUM" >&2; exit 1;
 }
+if [[ "${SOURCE_DISCOVERY_ONLY:-0}" == 1 ]]; then
+  python3 /work/scripts/check-source-version.py "$source_family" "$SUITE" "$BASE"
+  exit 0
+fi
 ACTUAL_FAMILY="$(netavark_source_family "$BASE")"
 [[ "$ACTUAL_FAMILY" == "$FAMILY" ]] || {
   echo "FAIL: native Netavark $BASE changed patch family $FAMILY -> $ACTUAL_FAMILY" >&2

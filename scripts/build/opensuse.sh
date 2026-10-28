@@ -4,7 +4,6 @@ set -Eeuo pipefail
 LEAP_VERSION="${LEAP_VERSION:?expected 16.0 or 16.1}"
 EXPECTED_ARCH="${EXPECTED_ARCH:?x86_64 or aarch64}"
 [[ "$LEAP_VERSION" == 16.0 || "$LEAP_VERSION" == 16.1 ]] || exit 2
-[[ "$REVISION" =~ ^[1-9][0-9]*$ ]] || exit 2
 ARCH="$(rpm --eval '%{_arch}')"
 [[ "$ARCH" == "$EXPECTED_ARCH" ]] || exit 2
 case "$LEAP_VERSION" in
