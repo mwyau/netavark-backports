@@ -31,11 +31,8 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0
-      - name: Check version ordering and release scripts
-        run: |
-          python3 -m py_compile release/versions.py scripts/plan.py release/release.py scripts/run.py scripts/propose-updates.py
-          bash -n scripts/build/*.sh
-          python3 tests/ci.py
+      - name: Check automation and release logic
+        run: python3 scripts/check.py
       - name: Find most recent release snapshot
         id: base
         env:

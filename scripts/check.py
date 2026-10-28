@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fast CI checks for version ordering, build selection and release assets."""
+"""Check automation syntax, package versions, CI planning and releases."""
 
 import json
 import os
@@ -8,6 +8,17 @@ from pathlib import Path
 import runpy
 import subprocess
 import tempfile
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def check_scripts() -> None:
+    for directory in ("release", "scripts"):
+        for path in sorted((ROOT / directory).glob("*.py")):
+            compile(path.read_bytes(), str(path), "exec")
+    for path in sorted((ROOT / "scripts/build").glob("*.sh")):
+        subprocess.run(["bash", "-n", str(path)], check=True)
+
 
 versions = runpy.run_path("release/versions.py")
 plan = runpy.run_path("scripts/plan.py")["plan"]
@@ -47,8 +58,12 @@ def check_plan(manifest: dict) -> None:
         pass
     else:
         raise AssertionError("A changed native version must reset its revision")
-    required = {"debian/forky", "debian/sid", "ubuntu/stonking",
-                "fedora/43", "fedora/44", "opensuse/16.1"}
+    required = {
+        f"{family}/{target}"
+        for family in ("debian", "ubuntu", "fedora", "opensuse")
+        for target, item in manifest[family].items()
+        if item["source"].split("-", 1)[0].startswith("1.17.")
+    }
     assert plan(manifest, manifest, {"patches/1.17/change.patch"}, "pull_request")[0] == required
     try:
         plan(manifest, manifest, {"patches/1.17/change.patch"}, "push")
@@ -56,7 +71,7 @@ def check_plan(manifest: dict) -> None:
         pass
     else:
         raise AssertionError("A changed patch must increment affected revisions")
-    assert not plan(manifest, manifest, {"tests/ci.py"}, "pull_request")[0]
+    assert not plan(manifest, manifest, {"scripts/check.py"}, "pull_request")[0]
     assert plan(manifest, manifest, {"scripts/build/ports.sh"}, "pull_request")[0] == {
         "debian/trixie", "debian/forky", "debian/sid",
         "ubuntu/resolute", "ubuntu/stonking",
@@ -99,17 +114,18 @@ def check_discovery(manifest: dict) -> None:
     # A newly published source revision is discovered without rewriting the lock.
     with tempfile.TemporaryDirectory() as tmp:
         found = Path(tmp) / "debian-trixie.txt"
+        candidate = manifest["debian"]["trixie"]["source"] + "+discovery1"
         env = os.environ | {
             "SOURCE_DISCOVERY_ONLY": "1",
             "SOURCE_DISCOVERY_FILE": str(found),
         }
         subprocess.run(
             [sys.executable, "release/versions.py",
-             "debian", "trixie", "1.14.0-2+deb13u5"],
+             "debian", "trixie", candidate],
             env=env, check=True, capture_output=True, text=True,
         )
-        assert found.read_text() == "1.14.0-2+deb13u5\n"
-        assert manifest["debian"]["trixie"]["source"] != found.read_text().strip()
+        assert found.read_text() == candidate + "\n"
+        assert manifest["debian"]["trixie"]["source"] != candidate
 
     for family, target, bad in (
         ("debian", "trixie", "invalid version"),
@@ -126,9 +142,11 @@ def check_discovery(manifest: dict) -> None:
             raise AssertionError(f"Accepted invalid source: {family}/{target} {bad!r}")
 
 if __name__ == "__main__":
+    os.chdir(ROOT)
+    check_scripts()
     current = json.loads(Path("release/versions.json").read_text())
     check_versions()
     check_discovery(current)
     check_plan(current)
     check_release(current)
-    print("PASS: version discovery, ordering, change selection and release verification")
+    print("PASS: script syntax, version discovery and ordering, CI planning, releases")

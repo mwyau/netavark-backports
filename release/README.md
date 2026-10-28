@@ -16,11 +16,11 @@ The [daily source check](../.github/workflows/upstream.yml) reads the native sou
 
 ## Build and test
 
-Version selection and downstream DEB naming are implemented in `release/versions.py`; release assembly, verification and publication use `release/release.py`. Native package builds and Podman tests are Bash scripts in `scripts/build/`. CI orchestration and upstream update automation are Python scripts in `scripts/`; release management lives in `release/`, with fast checks in `tests/ci.py`.
+Version selection and downstream DEB naming are implemented in `release/versions.py`; release assembly, verification and publication use `release/release.py`. Native package builds and Podman tests are Bash scripts in `scripts/build/`. CI orchestration and upstream update automation are Python scripts in `scripts/`; release management lives in `release/`, with all fast checks in `scripts/check.py`.
 
 The main [workflow](../.github/workflows/ci.yml) runs on pull requests and pushes to `main`. PRs compile and test the targets affected by source locks, patches, build scripts or networking tests. On `main`, only targets whose reviewed source or revision differs from the most recent release snapshot are rebuilt. Each affected target builds on both architectures. If no snapshot exists yet, all targets are built.
 
-The networking tests use `scripts/build/dualstack.sh` for fresh installs and IPv4/IPv6 upgrade regressions, and `scripts/build/ports.sh` for Debian/Ubuntu's in-place IPv4 upgrade without deleting existing networks. `tests/ci.py` checks versioning, release assets and CI planning; `scripts/build/stock.sh` and `scripts/build/noble.sh` are standalone stock-distribution probes.
+The networking tests use `scripts/build/dualstack.sh` for fresh installs and IPv4/IPv6 upgrade regressions, and `scripts/build/ports.sh` for Debian/Ubuntu's in-place IPv4 upgrade without deleting existing networks. `scripts/check.py` checks versioning, release assets and CI planning; `scripts/build/stock.sh` and `scripts/build/noble.sh` are standalone stock-distribution probes.
 
 The key test checks two Podman containers on isolated IPv4/IPv6 bridges, first with the original package, then after upgrading Netavark while the networks remain in place. The published host ports must work after the upgrade, and direct cross-bridge traffic must remain isolated.
 
