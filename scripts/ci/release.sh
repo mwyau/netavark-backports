@@ -76,7 +76,7 @@ fi
 # Each draft labels its UTC preparation day; numbering is independent of xdddN.
 # Keep the exact commit in the draft target and notes, not in the public tag.
 tags="$(gh release list --repo "$GITHUB_REPOSITORY" --limit 1000 --json tagName --jq '.[].tagName')"
-previous="$(printf '%s\n' "$tags" | grep -E '^netavark-[0-9]{8}\.[1-9][0-9]*
+previous="$(printf '%s\n' "$tags" | grep -E '^netavark-[0-9]{8}\.[1-9][0-9]*$' | head -n1 || true)"
 if [[ -n "$previous" ]]; then
   previous_commit="$(gh release view "$previous" --repo "$GITHUB_REPOSITORY" \
     --json targetCommitish --jq '.targetCommitish')"
@@ -130,52 +130,6 @@ tag="netavark-${stamp}.$(( ${last_seq:-0} + 1 ))"
 gh release create "$tag" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
   --draft --prerelease --title "Netavark backports $tag" \
   --notes "Validated distribution-native Netavark backports from commit $GITHUB_SHA. Review versions.json and SHA256SUMS before publication."
-for file in "$work"/*; do
-  [[ "$(basename "$file")" == previous-versions.json ]] && continue
-  gh release upload "$tag" "$file" --repo "$GITHUB_REPOSITORY"
-done
-gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json url,isDraft,tagName,assets \
-  --jq '{url,isDraft,tagName,assets:[.assets[].name]}'
- | head -n1 || true)"
-if [[ -n "$previous" ]]; then
-  previous_commit="$(gh release view "$previous" --repo "$GITHUB_REPOSITORY" \
-    --json targetCommitish --jq '.targetCommitish')"
-  [[ "$previous_commit" =~ ^[0-9a-f]{40}$ ]] || {
-    echo "Unverifiable previous draft target: $previous_commit" >&2; exit 1;
-  }
-  git cat-file -e "$previous_commit^{commit}"
-  git show "$previous_commit:release/versions.json" > "$work/previous-versions.json"
-  # Same-commit reruns and documentation updates do not create new drafts.
-  if cmp -s release/versions.json "$work/previous-versions.json"; then
-    changes="$(git diff --name-only "$previous_commit" "$GITHUB_SHA" -- patches scripts/build scripts/deb-version.sh)"
-    if [[ -n "$changes" ]]; then
-      echo "Packaging changed without changing per-distribution versions.json revisions:" >&2
-      printf '%s\n' "$changes" >&2
-      exit 1
-    fi
-    echo "No package revision changes since $previous; no new release"
-    exit 0
-  fi
-  # Each changed source must also advance its own downstream revision.
-  python3 - "$work/previous-versions.json" release/versions.json <<'PY'
-import json
-import sys
-old, new = [json.load(open(p)) for p in sys.argv[1:]]
-for family, targets in new.items():
-    if family == "schema":
-        continue
-    for name, item in targets.items():
-        before = old.get(family, {}).get(name)
-        if before and (item["source"] != before["source"] or
-                       item["revision"] != before["revision"]):
-            if item["revision"] <= before["revision"]:
-                sys.exit(f"Must increase {family}/{name} revision for a package update")
-PY
-fi
-
-gh release create "$tag" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
-  --draft --prerelease --title "Netavark backports $(printf '%.12s' "$GITHUB_SHA")" \
-  --notes "Validated distribution-native Netavark backports. Review versions.json and SHA256SUMS before publication."
 for file in "$work"/*; do
   [[ "$(basename "$file")" == previous-versions.json ]] && continue
   gh release upload "$tag" "$file" --repo "$GITHUB_REPOSITORY"
