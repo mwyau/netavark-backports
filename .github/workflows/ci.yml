@@ -35,15 +35,14 @@ jobs:
       - name: Check version ordering and release scripts
         run: |
           python3 -m py_compile scripts/versions.py scripts/ci/plan.py scripts/ci/release.py
-          bash -n scripts/ci/run.sh scripts/ci/release.sh scripts/ci/propose-updates.sh
+          bash -n scripts/ci/run.sh scripts/ci/propose-updates.sh
           bash tests/debian-versioning.sh
       - name: Find most recent release snapshot
         id: base
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          tag="$(gh release list --limit 1000 --json tagName --jq '.[].tagName' |
-            grep -E '^netavark-[0-9]{8}\.[1-9][0-9]*$' | head -n1 || true)"
+          tag="$(python3 scripts/ci/release.py latest)"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           if [[ "${{ github.ref }}" == refs/heads/main && -n "$tag" ]]; then
             sha="$(gh release view "$tag" --json targetCommitish --jq .targetCommitish)"
@@ -157,7 +156,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           BASE_TAG: ${{ needs.plan.outputs.base_tag }}
-        run: bash scripts/ci/release.sh verify incoming
+        run: python3 scripts/ci/release.py prepare incoming candidate
       - name: Preserve the exact validated release candidate
         uses: actions/upload-artifact@v7
         with:
@@ -186,7 +185,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           BASE_TAG: ${{ needs.plan.outputs.base_tag }}
-        run: bash scripts/ci/release.sh create candidate
+        run: python3 scripts/ci/release.py draft candidate
 
   merge-update:
     name: Merge tested source updates
