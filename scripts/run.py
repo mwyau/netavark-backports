@@ -53,7 +53,7 @@ def test(image: str, output: Path, script: str, variable: str,
         env = {variable: mode}
         if rev is not None:
             env["REVISION"] = rev
-        docker(image, f"/work/scripts/{script}", runtime=True, volumes=volumes, **env)
+        docker(image, f"/work/scripts/build/{script}", runtime=True, volumes=volumes, **env)
 
 
 def deb() -> None:
@@ -66,7 +66,7 @@ def deb() -> None:
     else:
         sys.exit(f"Unsupported suite: {suite}")
     rev = revision(family, suite)
-    docker(image, "/work/scripts/deb.sh",
+    docker(image, "/work/scripts/build/deb.sh",
            SUITE=suite, EXPECTED_ARCH=arch, REVISION=rev)
     output = ROOT / "dist" / suite / arch
     package = one_package(output, f"netavark_*_{arch}.deb")
@@ -98,7 +98,7 @@ def rpm() -> None:
     else:
         sys.exit(f"Unsupported RPM platform: {platform}")
     rev = revision(family, target)
-    docker(image, f"/work/scripts/{script}",
+    docker(image, f"/work/scripts/build/{script}",
            **{variable: target, "EXPECTED_ARCH": arch, "REVISION": rev})
     output = ROOT / "dist" / platform / arch
     one_package(output, "netavark-*.rpm")

@@ -55,7 +55,7 @@ def check_plan(manifest: dict) -> None:
     else:
         raise AssertionError("A changed patch must increment affected revisions")
     assert not plan(manifest, manifest, {"tests/ci.py"}, "pull_request")[0]
-    assert plan(manifest, manifest, {"scripts/ports.sh"}, "pull_request")[0] == {
+    assert plan(manifest, manifest, {"scripts/build/ports.sh"}, "pull_request")[0] == {
         "debian/trixie", "debian/forky", "debian/sid",
         "ubuntu/resolute", "ubuntu/stonking",
     }
@@ -64,10 +64,13 @@ def check_plan(manifest: dict) -> None:
 def check_release(manifest: dict) -> None:
     targets = release["assets_by_target"](manifest)
     assert len(release["expected_assets"](manifest)) == 28
-    assert "netavark_1.17.2-3xddd1~forky_amd64.deb" in targets["debian/forky"]
-    assert "netavark_1.16.1-3.1ppaxddd1~resolute_arm64.deb" in targets["ubuntu/resolute"]
-    assert release["asset_label"]("netavark-1.17.2-1.xddd1.fc43.x86_64.rpm",
-                                  manifest) == "Fedora 43 — x86_64"
+    for family, suite, arch in (("debian", "forky", "amd64"),
+                                ("ubuntu", "resolute", "arm64")):
+        entry = manifest[family][suite]
+        version = versions["deb_version"](entry["source"], entry["revision"], suite)
+        assert f"netavark_{version}_{arch}.deb" in targets[f"{family}/{suite}"]
+    rpm = next(name for name in targets["fedora/43"] if name.endswith(".x86_64.rpm"))
+    assert release["asset_label"](rpm, manifest) == "Fedora 43 — x86_64"
     with tempfile.TemporaryDirectory() as temp:
         incoming, candidate = Path(temp) / "incoming", Path(temp) / "candidate"
         for target, names in targets.items():
