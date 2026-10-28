@@ -109,17 +109,157 @@ def plan(tag: str, repo: str) -> dict:
     return result
 
 
+
+
+def required(name: str) -> str:
+    value = os.environ.get(name, "")
+    if not value.strip():
+        sys.exit(f"Missing distribution configuration: {name}")
+    return value
+
+
+def run(*args: str, **kwargs: object) -> None:
+    subprocess.run(args, check=True, **kwargs)
+
+
+def submit_ppa(assets: Path, manifest: dict, targets: list[str]) -> None:
+    import tarfile
+
+    ppa = required("PPA_TARGET")
+    fingerprint = required("PPA_GPG_FINGERPRINT")
+    secret_key = required("PPA_GPG_PRIVATE_KEY")
+    if not re.fullmatch(r"ppa:[A-Za-z0-9_.+-]+/[A-Za-z0-9_.+-]+", ppa):
+        sys.exit("Invalid PPA destination")
+    if not re.fullmatch(r"[A-Fa-f0-9]{40}", fingerprint):
+        sys.exit("PPA key must be specified by its full fingerprint")
+    with tempfile.TemporaryDirectory() as scratch:
+        gnupg = Path(scratch) / "gnupg"
+        gnupg.mkdir(mode=0o700)
+        env = os.environ | {"GNUPGHOME": str(gnupg), "GPG_TTY": ""}
+        subprocess.run(["gpg", "--batch", "--import"], input=secret_key,
+                       text=True, check=True, env=env,
+                       stdout=subprocess.DEVNULL)
+        run("gpg", "--batch", "--list-secret-keys", fingerprint, env=env,
+            stdout=subprocess.DEVNULL)
+        for target in targets:
+            suite = target.split("/")[1]
+            item = manifest["ubuntu"][suite]
+            archive = assets / f"netavark-source-{suite}-ppaxddd{item['revision']}.tar.gz"
+            directory = Path(scratch) / suite
+            directory.mkdir()
+            with tarfile.open(archive) as tar:
+                members = tar.getmembers()
+                if not members or any(not m.isfile() or Path(m.name).name != m.name
+                                      for m in members):
+                    sys.exit(f"Unsafe source archive: {archive.name}")
+                for member in members:
+                    data = tar.extractfile(member)
+                    if data is None:
+                        sys.exit("Missing archive member data")
+                    with (directory / member.name).open("wb") as stream:
+                        stream.write(data.read())
+            changes = list(directory.glob("*_source.changes"))
+            if len(changes) != 1 or len(list(directory.glob("*.dsc"))) != 1:
+                sys.exit(f"Incomplete PPA source: {suite}")
+            run("debsign", "--re-sign", f"-k{fingerprint}", str(changes[0]), env=env)
+            run("dput", ppa, str(changes[0]), env=env)
+
+
+def submit_copr(assets: Path, targets: list[str]) -> None:
+    project = required("COPR_PROJECT")
+    config = required("COPR_CONFIG")
+    if not re.fullmatch(r"[A-Za-z0-9_.+-]+/[A-Za-z0-9_.+-]+", project):
+        sys.exit("COPR_PROJECT must be owner/project")
+    with tempfile.TemporaryDirectory() as home:
+        settings = Path(home) / ".config"
+        settings.mkdir()
+        config_file = settings / "copr"
+        config_file.write_text(config)
+        config_file.chmod(0o600)
+        for target in targets:
+            fedora = target.split("/")[1]
+            source = next((f for f in assets.glob(f"netavark-*.fc{fedora}.src.rpm")), None)
+            if source is None:
+                sys.exit(f"Missing Fedora {fedora} source RPM")
+            # The COPR client runs in a Fedora image; no host tools are installed.
+            run("docker", "run", "--rm", "--pull=always",
+                "--security-opt", "no-new-privileges", "-v", f"{home}:/home:ro",
+                "-v", f"{assets.resolve()}:/assets:ro", "-e", "HOME=/home",
+                "fedora:44", "bash", "-ec",
+                'dnf -y install copr-cli >/dev/null; exec copr-cli "$@"',
+                "_", "build", "--chroot", f"fedora-{fedora}-x86_64",
+                "--chroot", f"fedora-{fedora}-aarch64", project,
+                f"/assets/{source.name}")
+
+
+def submit_obs(assets: Path, targets: list[str]) -> None:
+    config = required("OBS_CONFIG")
+    projects = {
+        "16.0": required("OBS_PROJECT_16_0"),
+        "16.1": required("OBS_PROJECT_16_1"),
+    }
+    with tempfile.TemporaryDirectory() as home:
+        config_dir = Path(home) / ".config" / "osc"
+        config_dir.mkdir(parents=True)
+        config_file = config_dir / "oscrc"
+        config_file.write_text(config)
+        config_file.chmod(0o600)
+        env = os.environ | {"HOME": home, "XDG_CONFIG_HOME": str(Path(home) / ".config")}
+        for target in targets:
+            leap = target.split("/")[1]
+            source = json.loads((assets / "versions.json").read_text())["opensuse"][leap]
+            filename = f"netavark-{source['source']}.xddd{source['revision']}.src.rpm"
+            entry = assets / filename
+            # Match exact expected filenames rather than guessing an RPM glob.
+            if not entry.is_file():
+                sys.exit(f"Missing openSUSE {leap} source RPM")
+            with tempfile.TemporaryDirectory() as work:
+                run("osc", "importsrcpkg", "--commit", "--project", projects[leap],
+                    "--name", "netavark", str(entry), cwd=work, env=env)
+
+
+def submit(destination: str, tag: str, repo: str, requested: list[str]) -> None:
+    if destination not in TARGETS or not requested or len(requested) != len(set(requested)):
+        sys.exit("Invalid distribution targets")
+    if any(key not in TARGETS[destination] for key in requested):
+        sys.exit("Distribution includes unsupported targets")
+    sha = release_info(tag, repo)
+    if tag != latest_published(repo):
+        sys.exit(f"Refusing superseded release {tag}")
+    current = reviewed_manifest(sha)
+    with tempfile.TemporaryDirectory() as tmp:
+        assets = Path(tmp)
+        download_verified(tag, repo, sha, assets)
+        previous_tag = last_distributed(repo, destination)
+        previous = reviewed_manifest(release_info(previous_tag, repo)) if previous_tag else None
+        actual = changed_targets(current, previous, destination)
+        if requested != actual:
+            sys.exit(f"Distribution plan changed during approval: {requested} != {actual}")
+        if destination == "ppa":
+            submit_ppa(assets, current, requested)
+        elif destination == "copr":
+            submit_copr(assets, requested)
+        else:
+            submit_obs(assets, requested)
+
 def main() -> None:
-    if sys.argv[1:] != ["plan"]:
-        sys.exit("usage: distribute.py plan (TAG and GITHUB_REPOSITORY from environment)")
     if os.environ.get("GITHUB_REF") != "refs/heads/main":
         sys.exit("Distribution must run from main")
     repo = os.environ["GITHUB_REPOSITORY"]
     tag = os.environ["RELEASE_TAG"]
-    result = plan(tag, repo)
-    with Path(os.environ["GITHUB_OUTPUT"]).open("a") as file:
-        for key, value in result.items():
-            file.write(f"{key}={value}\n")
+    if sys.argv[1:] == ["plan"]:
+        result = plan(tag, repo)
+        with Path(os.environ["GITHUB_OUTPUT"]).open("a") as file:
+            for key, value in result.items():
+                file.write(f"{key}={value}\n")
+    elif len(sys.argv) == 3 and sys.argv[1] == "submit":
+        destination = sys.argv[2]
+        requested = json.loads(required("DISTRIBUTION_TARGETS"))
+        if not isinstance(requested, list):
+            sys.exit("Invalid distribution target list")
+        submit(destination, tag, repo, requested)
+    else:
+        sys.exit("usage: distribute.py plan | submit ppa|copr|obs")
 
 
 if __name__ == "__main__":
