@@ -1,0 +1,126 @@
+name: Distribute release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Published, validated GitHub Release tag
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: netavark-distribution
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Verify published release and changed packages
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      deployments: read
+    outputs:
+      url: ${{ steps.plan.outputs.url }}
+      ppa: ${{ steps.plan.outputs.ppa }}
+      ppa_targets: ${{ steps.plan.outputs.ppa_targets }}
+      copr: ${{ steps.plan.outputs.copr }}
+      copr_targets: ${{ steps.plan.outputs.copr_targets }}
+      obs: ${{ steps.plan.outputs.obs }}
+      obs_targets: ${{ steps.plan.outputs.obs_targets }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Verify published tag, commit, assets and destination changes
+        id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: python3 release/distribute.py plan
+
+  ppa:
+    name: Submit Ubuntu PPA
+    needs: verify
+    if: needs.verify.outputs.ppa == 'true' && vars.DISTRIBUTION_ENABLED == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    environment:
+      name: ppa
+      url: ${{ needs.verify.outputs.url }}
+    permissions:
+      contents: read
+      deployments: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - run: sudo apt-get update && sudo apt-get install -y devscripts dput gnupg
+      - name: Reverify and submit changed Ubuntu source packages
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+          DISTRIBUTION_TARGETS: ${{ needs.verify.outputs.ppa_targets }}
+          PPA_TARGET: ${{ vars.PPA_TARGET }}
+          PPA_GPG_FINGERPRINT: ${{ vars.PPA_GPG_FINGERPRINT }}
+          PPA_GPG_PRIVATE_KEY: ${{ secrets.PPA_GPG_PRIVATE_KEY }}
+        run: python3 release/distribute.py submit ppa
+
+  copr:
+    name: Submit Fedora COPR
+    needs: verify
+    if: needs.verify.outputs.copr == 'true' && vars.DISTRIBUTION_ENABLED == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    environment:
+      name: copr
+      url: ${{ needs.verify.outputs.url }}
+    permissions:
+      contents: read
+      deployments: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Reverify and submit changed Fedora source RPMs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+          DISTRIBUTION_TARGETS: ${{ needs.verify.outputs.copr_targets }}
+          COPR_PROJECT: ${{ vars.COPR_PROJECT }}
+          COPR_CONFIG: ${{ secrets.COPR_CONFIG }}
+        run: python3 release/distribute.py submit copr
+
+  obs:
+    name: Submit openSUSE OBS
+    needs: verify
+    if: needs.verify.outputs.obs == 'true' && vars.DISTRIBUTION_ENABLED == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    environment:
+      name: obs
+      url: ${{ needs.verify.outputs.url }}
+    permissions:
+      contents: read
+      deployments: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - run: sudo apt-get update && sudo apt-get install -y osc
+      - name: Reverify and import changed Leap source RPMs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+          DISTRIBUTION_TARGETS: ${{ needs.verify.outputs.obs_targets }}
+          OBS_PROJECT_16_0: ${{ vars.OBS_PROJECT_16_0 }}
+          OBS_PROJECT_16_1: ${{ vars.OBS_PROJECT_16_1 }}
+          OBS_CONFIG: ${{ secrets.OBS_CONFIG }}
+        run: python3 release/distribute.py submit obs

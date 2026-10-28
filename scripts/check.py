@@ -179,6 +179,40 @@ def check_merge() -> None:
             raise AssertionError("Invalid update branch accepted")
         assert not calls
 
+
+def check_distribution() -> None:
+    from unittest.mock import patch
+
+    module = runpy.run_path("release/distribute.py")
+    manifest = json.loads(Path("release/versions.json").read_text())
+    select = module["changed_targets"]
+    assert select(manifest, None, "ppa") == ["ubuntu/resolute", "ubuntu/stonking"]
+    assert not select(manifest, manifest, "ppa")
+    previous = json.loads(json.dumps(manifest))
+    previous["fedora"]["44"]["revision"] += 1
+    assert select(manifest, previous, "copr") == ["fedora/44"]
+    assert not select(manifest, previous, "obs")
+
+    last = module["last_distributed"]
+    repo, tag = "mwyau/netavark-backports", "netavark-20261028.1"
+
+    def fake_gh(*args: str) -> str:
+        if args[0] != "api":
+            raise AssertionError(args)
+        if args[1].startswith("repos/" + repo + "/deployments?"):
+            return '[{"id":3},{"id":2}]'
+        if "/deployments/3/statuses?" in args[1]:
+            return '[{"state":"failure"}]'
+        if "/deployments/2/statuses?" in args[1]:
+            return json.dumps([{
+                "state": "success",
+                "environment_url": f"https://github.com/{repo}/releases/tag/{tag}",
+            }])
+        raise AssertionError(args)
+
+    with patch.dict(last.__globals__, {"gh": fake_gh}):
+        assert last(repo, "ppa") == tag
+
 if __name__ == "__main__":
     os.chdir(ROOT)
     check_scripts()
@@ -188,4 +222,5 @@ if __name__ == "__main__":
     check_plan(current)
     check_release(current)
     check_merge()
+    check_distribution()
     print("PASS: script syntax, version discovery and ordering, CI planning, merges, releases")

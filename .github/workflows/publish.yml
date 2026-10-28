@@ -27,6 +27,7 @@ jobs:
       name: publishing
     permissions:
       contents: write
+      actions: write
     steps:
       - uses: actions/checkout@v7
         with:
@@ -38,3 +39,8 @@ jobs:
           RELEASE_TAG: ${{ inputs.tag }}
           GH_REPO: ${{ github.repository }}
         run: python3 release/release.py publish "$RELEASE_TAG"
+      - name: Request separately approved distribution
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: gh workflow run distribute.yml --repo "$GITHUB_REPOSITORY" --ref main -f "tag=$RELEASE_TAG"
