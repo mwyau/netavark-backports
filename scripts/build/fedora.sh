@@ -3,12 +3,12 @@
 set -Eeuo pipefail
 FEDORA_RELEASE="${FEDORA_RELEASE:?expected Fedora 43 or 44}"
 [[ "$FEDORA_RELEASE" == 43 || "$FEDORA_RELEASE" == 44 ]] || { echo "Unsupported Fedora release" >&2; exit 2; }
-REVISION="$(python3 /work/scripts/check-source-version.py --revision fedora "$FEDORA_RELEASE")"
 EXPECTED_ARCH="${EXPECTED_ARCH:?expected x86_64 or aarch64}"
 ARCH="$(rpm --eval '%{_arch}')"
 [[ "$ARCH" == "$EXPECTED_ARCH" ]] || { echo "FAIL: architecture mismatch"; exit 2; }
 grep -q "release $FEDORA_RELEASE" /etc/fedora-release
 dnf -y install dnf-plugins-core rpm-build rpmdevtools git-core patch python3
+REVISION="$(python3 /work/scripts/check-source-version.py --revision fedora "$FEDORA_RELEASE")"
 mkdir -p "/work/dist/fedora${FEDORA_RELEASE}/$ARCH" /tmp/netavark-fedora-src
 cd /tmp/netavark-fedora-src
 dnf download --source netavark

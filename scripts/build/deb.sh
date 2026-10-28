@@ -18,7 +18,6 @@ esac
 source /work/scripts/deb-version.sh
 source_family=debian
 [[ "$SUITE" == resolute || "$SUITE" == stonking ]] && source_family=ubuntu
-REVISION="$(python3 /work/scripts/check-source-version.py --revision "$source_family" "$SUITE")"
 export DEBIAN_FRONTEND=noninteractive
 if [[ "$SUITE" == experimental ]]; then
   cat >/etc/apt/sources.list.d/netavark-source.sources <<'EOF'
@@ -70,6 +69,7 @@ fi
 
 apt-get update
 apt-get install -y --no-install-recommends ca-certificates dpkg-dev devscripts fakeroot quilt python3
+REVISION="$(python3 /work/scripts/check-source-version.py --revision "$source_family" "$SUITE")"
 # Resolve the highest available NATIVE source revision across release,
 # security and updates pockets. Do not silently remain based on stale -2.
 BASE=""

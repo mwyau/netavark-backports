@@ -11,10 +11,10 @@ case "$LEAP_VERSION" in
   16.0) FAMILY=1.14; PLATFORM=leap16 ;;
   16.1) FAMILY=1.17; PLATFORM=leap161 ;;
 esac
-REVISION="$(python3 /work/scripts/check-source-version.py --revision opensuse "$LEAP_VERSION")"
 zypper --non-interactive --gpg-auto-import-keys refresh
 zypper --non-interactive install --no-recommends \
   rpm-build patch python3 findutils tar gzip
+REVISION="$(python3 /work/scripts/check-source-version.py --revision opensuse "$LEAP_VERSION")"
 zypper --non-interactive addrepo -f \
   "https://download.opensuse.org/source/distribution/leap/$LEAP_VERSION/repo/oss/" netavark-native-source
 zypper --non-interactive --gpg-auto-import-keys refresh
