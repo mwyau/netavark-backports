@@ -1,4 +1,4 @@
-name: Check distribution Netavark source versions
+name: Check upstream
 
 on:
   schedule:
@@ -61,7 +61,6 @@ jobs:
       - name: Upload discovered native source
         uses: actions/upload-artifact@v7
         with:
-          archive: false
           name: native-${{ matrix.family }}-${{ matrix.target }}
           path: discovered/${{ matrix.family }}-${{ matrix.target }}.txt
           if-no-files-found: error

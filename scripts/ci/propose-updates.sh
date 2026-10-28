@@ -35,6 +35,6 @@ for file in discovered/*.txt; do
   fi
   # GITHUB_TOKEN-created PRs do not trigger pull_request workflows.
   # workflow_dispatch is an explicit exception to GitHub's recursion prevention.
-  gh workflow run build.yml --repo "$GITHUB_REPOSITORY" --ref "$branch"
+  gh workflow run ci.yml --repo "$GITHUB_REPOSITORY" --ref "$branch"
 done
 git switch main

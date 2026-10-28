@@ -1,4 +1,4 @@
-name: Native Netavark builds and networking regressions
+name: Build and test
 
 on:
   pull_request:
@@ -80,7 +80,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           SUITE: ${{ matrix.suite }}
           EXPECTED_ARCH: ${{ matrix.arch }}
-        run: bash scripts/ci/deb.sh
+        run: bash scripts/ci/run.sh deb
       - name: Upload native Debian source package
         if: success() && matrix.arch == 'amd64' && matrix.suite != 'experimental'
         uses: actions/upload-artifact@v7
@@ -121,7 +121,7 @@ jobs:
           RPM_PLATFORM: ${{ matrix.platform }}
           RPM_IMAGE: ${{ matrix.image }}
           RPM_ARCH: ${{ matrix.arch }}
-        run: bash scripts/ci/rpm.sh
+        run: bash scripts/ci/run.sh rpm
       - name: Upload patched native Fedora SRPM
         if: success() && startsWith(matrix.platform, 'fedora') && matrix.arch == 'x86_64'
         uses: actions/upload-artifact@v7

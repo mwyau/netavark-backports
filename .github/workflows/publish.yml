@@ -1,4 +1,4 @@
-name: Publish approved GitHub Release
+name: Publish release
 
 on:
   workflow_dispatch:
