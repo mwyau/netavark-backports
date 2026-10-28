@@ -14,11 +14,11 @@ The [daily source check](../.github/workflows/upstream.yml) reads the native sou
 
 ## Build and test
 
-Version selection and downstream DEB naming are implemented in `scripts/versions.py`; release assembly, verification and publication use `scripts/ci/release.py`. Native distro builds and Podman system tests live in `scripts/native/` (Bash); CI orchestration, upstream PR automation and the fast `tests/ci.py` checks use Python.
+Version selection and downstream DEB naming are implemented in `release/versions.py`; release assembly, verification and publication use `release/release.py`. Native package builds and Podman tests are Bash scripts in `scripts/`. CI orchestration and upstream update automation are Python scripts in `scripts/`; release management lives in `release/`, with fast checks in `tests/ci.py`.
 
 The main [workflow](../.github/workflows/ci.yml) runs on pull requests and pushes to `main`. PRs compile and test the targets affected by source locks, patches, build scripts or networking tests. On `main`, only targets whose reviewed source or revision differs from the most recent release snapshot are rebuilt. Each affected target builds on both architectures. If no snapshot exists yet, all targets are built.
 
-The networking tests use `scripts/native/dualstack.sh` for fresh installs and IPv4/IPv6 upgrade regressions, and `scripts/native/ports.sh` for Debian/Ubuntu's in-place IPv4 upgrade without deleting existing networks. `tests/ci.py` checks versioning, release assets and CI planning; `scripts/native/stock.sh` and `scripts/native/noble.sh` are standalone stock-distribution probes.
+The networking tests use `scripts/dualstack.sh` for fresh installs and IPv4/IPv6 upgrade regressions, and `scripts/ports.sh` for Debian/Ubuntu's in-place IPv4 upgrade without deleting existing networks. `tests/ci.py` checks versioning, release assets and CI planning; `scripts/stock.sh` and `scripts/noble.sh` are standalone stock-distribution probes.
 
 The key test checks two Podman containers on isolated IPv4/IPv6 bridges, first with the original package, then after upgrading Netavark while the networks remain in place. The published host ports must work after the upgrade, and direct cross-bridge traffic must remain isolated.
 

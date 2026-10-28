@@ -27,10 +27,10 @@ For Debian Trixie on an AMD64 Docker host:
 docker run --rm --pull=always \
   -v "$PWD:/work" -w /work \
   -e SUITE=trixie -e EXPECTED_ARCH=amd64 -e REVISION=1 \
-  debian:trixie bash scripts/native/deb.sh
+  debian:trixie bash scripts/deb.sh
 ```
 
-The resulting packages and source files are saved in `dist/`. Fedora and openSUSE builds use their corresponding scripts under `scripts/native/`.
+The resulting packages and source files are saved in `dist/`. Fedora and openSUSE builds use their corresponding scripts under `scripts/`.
 
 ## Downloads and development
 
