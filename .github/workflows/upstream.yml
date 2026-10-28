@@ -1,6 +1,13 @@
 name: Check upstream
 
 on:
+  pull_request:
+    paths:
+      - .github/workflows/upstream.yml
+      - release/versions.py
+      - scripts/build/deb.sh
+      - scripts/build/fedora.sh
+      - scripts/build/opensuse.sh
   schedule:
     - cron: '23 7 * * *'
   workflow_dispatch:
@@ -9,7 +16,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: netavark-source-check
+  group: netavark-source-check-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -58,6 +65,14 @@ jobs:
                 "$IMAGE" bash /work/scripts/build/opensuse.sh ;;
             *) exit 2 ;;
           esac
+      - name: Validate discovered source version
+        env:
+          FAMILY: ${{ matrix.family }}
+          TARGET: ${{ matrix.target }}
+        run: |
+          file="discovered/${FAMILY}-${TARGET}.txt"
+          test -s "$file"
+          python3 release/versions.py --check "$FAMILY" "$TARGET" "$(cat "$file")"
       - name: Upload discovered native source
         uses: actions/upload-artifact@v7
         with:
@@ -69,7 +84,7 @@ jobs:
   propose:
     name: Propose changed native sources for review
     needs: [check]
-    if: always() && needs.check.result != 'cancelled'
+    if: always() && github.event_name != 'pull_request' && needs.check.result != 'cancelled'
     runs-on: ubuntu-24.04
     permissions:
       contents: write

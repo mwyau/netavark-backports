@@ -2,6 +2,8 @@
 """Fast CI checks for version ordering, build selection and release assets."""
 
 import json
+import os
+import sys
 from pathlib import Path
 import runpy
 import subprocess
@@ -87,9 +89,46 @@ def check_release(manifest: dict) -> None:
         release["verify"](candidate, Path("release/versions.json"))
 
 
+
+def check_discovery(manifest: dict) -> None:
+    # Every locked version must also satisfy the native source format.
+    for family in ("debian", "ubuntu", "fedora", "opensuse"):
+        for target, entry in manifest[family].items():
+            versions["validate_source"](family, target, entry["source"])
+
+    # A newly published source revision is discovered without rewriting the lock.
+    with tempfile.TemporaryDirectory() as tmp:
+        found = Path(tmp) / "debian-trixie.txt"
+        env = os.environ | {
+            "SOURCE_DISCOVERY_ONLY": "1",
+            "SOURCE_DISCOVERY_FILE": str(found),
+        }
+        subprocess.run(
+            [sys.executable, "release/versions.py",
+             "debian", "trixie", "1.14.0-2+deb13u5"],
+            env=env, check=True, capture_output=True, text=True,
+        )
+        assert found.read_text() == "1.14.0-2+deb13u5\n"
+        assert manifest["debian"]["trixie"]["source"] != found.read_text().strip()
+
+    for family, target, bad in (
+        ("debian", "trixie", "invalid version"),
+        ("ubuntu", "resolute", ""),
+        ("fedora", "43", "1.17.2-2.fc44"),
+        ("opensuse", "16.0", "1.14.1-160100.2.2"),
+        ("opensuse", "16.1", "1.17.2-160000.2.2"),
+    ):
+        try:
+            versions["validate_source"](family, target, bad)
+        except (SystemExit, subprocess.CalledProcessError):
+            pass
+        else:
+            raise AssertionError(f"Accepted invalid source: {family}/{target} {bad!r}")
+
 if __name__ == "__main__":
     current = json.loads(Path("release/versions.json").read_text())
     check_versions()
+    check_discovery(current)
     check_plan(current)
     check_release(current)
-    print("PASS: version ordering, change selection and release verification")
+    print("PASS: version discovery, ordering, change selection and release verification")

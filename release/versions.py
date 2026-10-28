@@ -3,6 +3,7 @@
 import json
 import os
 from pathlib import Path
+import re
 import subprocess
 import sys
 
@@ -62,6 +63,26 @@ def validate() -> None:
             entry(family, target)
 
 
+
+def validate_source(family: str, target: str, source: str) -> None:
+    """Validate a source version discovered from the requested distribution."""
+    entry(family, target)
+    if not source or source != source.strip() or any(char.isspace() for char in source):
+        sys.exit(f"Invalid {family}/{target} source version: {source!r}")
+    if family in ("debian", "ubuntu"):
+        subprocess.run(["dpkg", "--validate-version", source], check=True)
+    else:
+        if not re.fullmatch(r"[0-9][A-Za-z0-9.+_~]*-[0-9][A-Za-z0-9.+_~]*", source):
+            sys.exit(f"Invalid RPM source version: {source!r}")
+        native_release = source.rsplit("-", 1)[1]
+        if family == "fedora" and not native_release.endswith(f".fc{target}"):
+            sys.exit(f"Fedora source release does not match fc{target}: {source}")
+        if family == "opensuse":
+            major, minor = map(int, target.split("."))
+            prefix = str(major * 10000 + minor * 100)
+            if not native_release.startswith(prefix + "."):
+                sys.exit(f"Leap source release does not match {target}: {source}")
+
 def main() -> None:
     validate()
     if sys.argv[1:] == ["--validate"]:
@@ -76,11 +97,17 @@ def main() -> None:
             sys.exit("Invalid downstream revision")
         print(deb_version(sys.argv[2], revision, sys.argv[4]))
         return
+    if len(sys.argv) == 5 and sys.argv[1] == "--check":
+        family, target, source = sys.argv[2:]
+        validate_source(family, target, source)
+        expected = entry(family, target)["source"]
+        status = "unchanged" if source == expected else f"new (reviewed: {expected})"
+        print(f"{family}/{target}: {source} ({status})")
+        return
     if len(sys.argv) == 5 and sys.argv[1] == "--update":
         family, target, source = sys.argv[2:]
+        validate_source(family, target, source)
         item = entry(family, target)
-        if not source.strip() or any(char.isspace() for char in source):
-            sys.exit("Invalid native source version")
         if item["source"] != source:
             old = item["source"]
             item["source"] = source
@@ -94,6 +121,7 @@ def main() -> None:
         return
     if len(sys.argv) == 4:
         family, target, actual = sys.argv[1:]
+        validate_source(family, target, actual)
         expected = entry(family, target)["source"]
         discovered = os.environ.get("SOURCE_DISCOVERY_FILE")
         if discovered:
@@ -111,7 +139,7 @@ def main() -> None:
             )
         print(f"Native source unchanged: {family}/{target} {actual}")
         return
-    sys.exit("usage: versions.py [--validate|--family VERSION|--deb-version BASE REVISION SUITE|\n             --update FAMILY TARGET VERSION|--source FAMILY TARGET|"
+    sys.exit("usage: versions.py [--validate|--family VERSION|--deb-version BASE REVISION SUITE|\n             --update FAMILY TARGET VERSION|--check FAMILY TARGET VERSION|\n             --source FAMILY TARGET|"
              "--revision FAMILY TARGET|FAMILY TARGET ACTUAL]")
 
 
