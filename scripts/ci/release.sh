@@ -1,138 +1,48 @@
 #!/usr/bin/env bash
-# Verify a complete same-run build before creating an immutable draft candidate.
+# Verify a full snapshot; create a draft only after a reviewed version change.
 set -Eeuo pipefail
-shopt -s nullglob
-mode="$1"
-incoming="$2"
-[[ "$mode" == verify || "$mode" == create ]] || {
-  echo "usage: release.sh verify|create INCOMING_DIR" >&2; exit 2;
-}
-[[ -d "$incoming" ]] || { echo "Missing directory: $incoming" >&2; exit 1; }
+mode="${1:?verify or create}"
+incoming="${2:?downloaded workflow artifacts}"
+[[ "$mode" == verify || "$mode" == create ]] || exit 2
+[[ -d "$incoming" ]] || { echo "Missing $incoming" >&2; exit 1; }
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
+repo="${GITHUB_REPOSITORY:?}"
+base="${BASE_TAG:-}"
 
-source_value() { python3 scripts/check-source-version.py --source "$1" "$2"; }
-revision_value() { python3 scripts/check-source-version.py --revision "$1" "$2"; }
-copy_exact() {
-  local name="$1"
-  local -a matches=()
-  mapfile -d '' matches < <(find "$incoming" -type f -name "$name" -print0)
-  [[ "${#matches[@]}" == 1 ]] || {
-    echo "Expected exactly one input for $name, found ${#matches[@]}" >&2; exit 1;
-  }
-  cp "${matches[0]}" "$work/$name"
-}
-
-for suite in trixie forky sid resolute stonking; do
-  family=debian
-  [[ "$suite" == resolute || "$suite" == stonking ]] && family=ubuntu
-  base="$(source_value "$family" "$suite")"
-  rev="$(revision_value "$family" "$suite")"
-  for arch in amd64 arm64; do
-    copy_exact "netavark_$(printf '%s' "$base")a~xddd$rev~$suite"_"$arch.deb"
-  done
-  source_dir="$incoming/source-deb-$suite"
-  [[ -d "$source_dir" ]] || { echo "Missing source bundle $suite" >&2; exit 1; }
-  dsc=( "$source_dir"/*.dsc )
-  changes=( "$source_dir"/*_source.changes )
-  [[ "${#dsc[@]}" == 1 && "${#changes[@]}" == 1 ]] || {
-    echo "Incomplete $suite source bundle" >&2; exit 1;
-  }
-  tar -czf "$work/netavark-source-$suite-xddd$rev.tar.gz" -C "$source_dir" .
-done
-for release in 43 44; do
-  base="$(source_value fedora "$release")"
-  rev="$(revision_value fedora "$release")"
-  stem="$(printf '%s' "$base" | sed "s/\.fc$release\$//")"
-  version="$stem.xddd$rev.fc$release"
-  for arch in x86_64 aarch64; do
-    copy_exact "netavark-$version.$arch.rpm"
-  done
-  copy_exact "netavark-$version.src.rpm"
-done
-for release in 16.0 16.1; do
-  base="$(source_value opensuse "$release")"
-  rev="$(revision_value opensuse "$release")"
-  version="$base.xddd$rev"
-  for arch in x86_64 aarch64; do
-    copy_exact "netavark-$version.$arch.rpm"
-  done
-  copy_exact "netavark-$version.src.rpm"
-done
-
-cp release/versions.json "$work/versions.json"
-(cd "$work"; sha256sum -- *.deb *.rpm *.tar.gz versions.json > SHA256SUMS)
-python3 scripts/ci/verify-release.py "$work"
+if [[ -n "$base" ]]; then
+  [[ "$base" =~ ^netavark-[0-9]{8}\.[1-9][0-9]*$ ]] || exit 2
+  mkdir -p "$work/previous"
+  gh release download "$base" --repo "$repo" --dir "$work/previous"
+  python3 scripts/ci/verify-release.py "$work/previous" "$work/previous/versions.json"
+  python3 scripts/ci/snapshot.py "$incoming" "$work/candidate" "$work/previous"
+else
+  python3 scripts/ci/snapshot.py "$incoming" "$work/candidate"
+fi
+python3 scripts/ci/verify-release.py "$work/candidate"
 
 if [[ "$mode" == verify ]]; then
-  echo "PR candidate asset assembly verified without creating a release"
+  echo "Verified complete release snapshot; no draft created"
   exit 0
 fi
-
 [[ "$GITHUB_EVENT_NAME" == push && "$GITHUB_REF" == refs/heads/main ]] || {
-  echo "Draft creation is restricted to the main-branch push workflow" >&2; exit 2;
+  echo "Draft creation requires a push to main" >&2; exit 2;
 }
-: "$GH_TOKEN" "$GITHUB_REPOSITORY" "$GITHUB_SHA"
-# Each draft labels its UTC preparation day; numbering is independent of xdddN.
-# Keep the exact commit in the draft target and notes, not in the public tag.
-tags="$(gh release list --repo "$GITHUB_REPOSITORY" --limit 1000 --json tagName --jq '.[].tagName')"
-previous="$(printf '%s\n' "$tags" | grep -E '^netavark-[0-9]{8}\.[1-9][0-9]*$' | head -n1 || true)"
-if [[ -n "$previous" ]]; then
-  previous_commit="$(gh release view "$previous" --repo "$GITHUB_REPOSITORY" \
-    --json targetCommitish --jq '.targetCommitish')"
-  [[ "$previous_commit" =~ ^[0-9a-f]{40}$ ]] || {
-    echo "Unverifiable previous draft target: $previous_commit" >&2; exit 1;
-  }
-  git cat-file -e "$previous_commit^{commit}"
-  git merge-base --is-ancestor "$previous_commit" "$GITHUB_SHA" || {
-    echo "Previous release commit is not an ancestor of this main-branch build" >&2; exit 1;
-  }
-  git show "$previous_commit:release/versions.json" > "$work/previous-versions.json"
-  # Same-commit reruns and documentation updates do not create new drafts.
-  if cmp -s release/versions.json "$work/previous-versions.json"; then
-    changes="$(git diff --name-only "$previous_commit" "$GITHUB_SHA" -- patches scripts/build scripts/deb-version.sh)"
-    if [[ -n "$changes" ]]; then
-      echo "Packaging changed without changing per-distribution versions.json revisions:" >&2
-      printf '%s\n' "$changes" >&2
-      exit 1
-    fi
-    # Never silently accept a draft left incomplete by an interrupted upload.
-    mkdir -p "$work/previous-release"
-    gh release download "$previous" --repo "$GITHUB_REPOSITORY" --dir "$work/previous-release"
-    python3 scripts/ci/verify-release.py "$work/previous-release" "$work/previous-versions.json"
-    echo "No package revision changes since $previous; its release assets are complete"
-    exit 0
-  fi
-  # Each changed source must also advance its own downstream revision.
-  python3 - "$work/previous-versions.json" release/versions.json <<'PY'
-import json
-import sys
-old, new = [json.load(open(p)) for p in sys.argv[1:]]
-for family, targets in new.items():
-    if family == "schema":
-        continue
-    for name, item in targets.items():
-        before = old.get(family, {}).get(name)
-        if before and (item["source"] != before["source"] or
-                       item["revision"] != before["revision"]):
-            if item["revision"] <= before["revision"]:
-                sys.exit(f"Must increase {family}/{name} revision for a package update")
-PY
+: "${GH_TOKEN:?}" "${GITHUB_SHA:?}"
+if [[ -n "$base" ]] && cmp -s "$work/previous/versions.json" release/versions.json; then
+  echo "No new package revisions; refusing duplicate release" >&2
+  exit 1
 fi
-
-# Allocate a fresh date sequence after checking whether a release is needed.
-# A draft's tag stays unchanged when it is approved on a later day.
+tags="$(gh release list --repo "$repo" --limit 1000 --json tagName --jq '.[].tagName')"
 stamp="$(date -u +%Y%m%d)"
 last_seq="$(printf '%s\n' "$tags" |
   sed -nE "s/^netavark-${stamp}\.([1-9][0-9]*)$/\1/p" | sort -n | tail -n1)"
 tag="netavark-${stamp}.$(( ${last_seq:-0} + 1 ))"
-
-gh release create "$tag" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+gh release create "$tag" --repo "$repo" --target "$GITHUB_SHA" \
   --draft --prerelease --title "Netavark backports $tag" \
-  --notes "Validated distribution-native Netavark backports from commit $GITHUB_SHA. Review versions.json and SHA256SUMS before publication."
-for file in "$work"/*; do
-  [[ "$(basename "$file")" == previous-versions.json ]] && continue
-  gh release upload "$tag" "$file" --repo "$GITHUB_REPOSITORY"
+  --notes "Validated snapshot from $GITHUB_SHA. Unchanged artifacts are carried from ${base:-the first build}. Review versions.json and SHA256SUMS before publication."
+for asset in "$work/candidate"/*; do
+  gh release upload "$tag" "$asset" --repo "$repo"
 done
-gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json url,isDraft,tagName,assets \
+gh release view "$tag" --repo "$repo" --json url,isDraft,tagName,assets \
   --jq '{url,isDraft,tagName,assets:[.assets[].name]}'
