@@ -99,7 +99,7 @@ fi
 python3 /work/scripts/check-source-version.py "$source_family" "$SUITE" "$BASE"
 netavark_check_source_available "$BASE"
 if [[ "${SOURCE_CHECK_ONLY:-0}" == 1 ]]; then
-  echo "Current native source matches release/source-versions.json: $source_family/$SUITE $BASE"
+  echo "Current native source matches release/versions.json: $source_family/$SUITE $BASE"
   exit 0
 fi
 VERSION="$(netavark_downstream_version "$BASE" "$REVISION" "$SUITE")"

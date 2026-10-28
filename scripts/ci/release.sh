@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Verify a complete same-run build before creating an immutable draft candidate.
 set -Eeuo pipefail
+shopt -s nullglob
 mode="$1"
 incoming="$2"
 [[ "$mode" == verify || "$mode" == create ]] || {

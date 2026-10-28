@@ -27,7 +27,7 @@ native_release="$(rpm -q --define 'default_firewall_backend nftables' --specfile
 [[ -n "$native_release" && "$native_release" != "(none)" ]] || exit 1
 python3 /work/scripts/check-source-version.py opensuse "$LEAP_VERSION" "$source_version-$native_release"
 if [[ "${SOURCE_CHECK_ONLY:-0}" == 1 ]]; then
-  echo "Current native source matches release/source-versions.json: opensuse/$LEAP_VERSION"
+  echo "Current native source matches release/versions.json: opensuse/$LEAP_VERSION"
   exit 0
 fi
 grep -Eq '^%autosetup([[:space:]]|$)' "$spec" || {

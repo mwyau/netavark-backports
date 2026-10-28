@@ -29,7 +29,7 @@ NATIVE_RELEASE_STEM="${NATIVE_RELEASE%.fc$FEDORA_RELEASE}"
 }
 python3 /work/scripts/check-source-version.py fedora "$FEDORA_RELEASE" "$NATIVE_VERSION-$NATIVE_RELEASE"
 if [[ "${SOURCE_CHECK_ONLY:-0}" == 1 ]]; then
-  echo "Current native source matches release/source-versions.json: fedora/$FEDORA_RELEASE"
+  echo "Current native source matches release/versions.json: fedora/$FEDORA_RELEASE"
   exit 0
 fi
 [[ "$NATIVE_VERSION" == 1.17.2 ]] || { echo "FAIL: unsupported Netavark patch family"; exit 1; }

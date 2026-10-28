@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# One RPM-family build+test job per release/arch; Leap native builds are experimental.
+# One RPM-family build+test job per release/arch; Leap native builds are included in validated releases.
 set -Eeuo pipefail
 source "$(dirname "$0")/common.sh"
 ci_require GITHUB_WORKSPACE RPM_PLATFORM RPM_IMAGE RPM_ARCH
