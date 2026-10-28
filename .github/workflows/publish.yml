@@ -28,7 +28,11 @@ jobs:
     permissions:
       contents: write
     steps:
-      - name: Check approved draft and immutable candidate
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Verify approved draft, target commit and all 29 assets
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ inputs.tag }}
@@ -36,8 +40,15 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          [[ "$RELEASE_TAG" =~ ^nv1483-r[1-9][0-9]*-g[0-9a-f]{12}$ ]]
-          gh release view "$RELEASE_TAG" --repo "$GH_REPO" --json isDraft,isPrerelease,assets \
-            --jq 'select(.isDraft == true and ([.assets[].name] | index("SHA256SUMS") != null))' | grep -q .
+          [[ "$RELEASE_TAG" =~ ^netavark-g[0-9a-f]{12}$ ]]
+          gh release view "$RELEASE_TAG" --repo "$GH_REPO" --json isDraft,isPrerelease \
+            --jq 'select(.isDraft == true and .isPrerelease == true)' | grep -q .
+          target="$(gh release view "$RELEASE_TAG" --repo "$GH_REPO" --json targetCommitish --jq .targetCommitish)"
+          [[ "$target" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$RELEASE_TAG" == "netavark-g$(printf '%.12s' "$target")" ]]
+          git merge-base --is-ancestor "$target" HEAD
+          [[ "$(git rev-parse "$RELEASE_TAG^{commit}")" == "$target" ]]
+          gh release download "$RELEASE_TAG" --repo "$GH_REPO" --dir incoming
+          git show "$target:release/versions.json" > reviewed-versions.json
+          python3 scripts/ci/verify-release.py incoming reviewed-versions.json
           gh release edit "$RELEASE_TAG" --repo "$GH_REPO" --draft=false --prerelease=false
-          echo "Published GitHub Release $RELEASE_TAG"

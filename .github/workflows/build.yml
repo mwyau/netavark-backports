@@ -26,8 +26,8 @@ jobs:
           set -euo pipefail
           find scripts tests -type f -name '*.sh' -print0 | xargs -0 -r -n1 bash -n
           python3 -m py_compile scripts/check-source-version.py
-          python3 -m json.tool release/source-versions.json >/dev/null
-          test "$(cat release/revision.txt)" -ge 1
+          python3 scripts/check-source-version.py --validate
+          python3 -m py_compile scripts/ci/verify-release.py
           bash tests/debian-versioning.sh
           for version in 1.14 1.16 1.17 2.0; do
             test -s "patches/$version/0001-allow-published-ports-across-isolated-bridges.patch"
@@ -134,6 +134,7 @@ jobs:
           archive: false
           path: dist/${{ matrix.platform }}/${{ matrix.arch }}/source/netavark-*.src.rpm
           if-no-files-found: error
+          retention-days: 30
       - name: Upload individual patched Leap RPM
         if: success() && startsWith(matrix.platform, 'leap')
         uses: actions/upload-artifact@v7
@@ -141,6 +142,7 @@ jobs:
           archive: false
           path: dist/${{ matrix.platform }}/${{ matrix.arch }}/netavark-[0-9]*.rpm
           if-no-files-found: error
+          retention-days: 30
       - name: Attach individual uncompressed native Fedora RPM
         if: success() && startsWith(matrix.platform, 'fedora')
         uses: actions/upload-artifact@v7
@@ -151,22 +153,26 @@ jobs:
           retention-days: 30
 
   draft-release:
-    name: Assemble validated main-branch assets into draft
+    name: Verify artifacts and prepare main-branch draft
     needs: [validate, deb, rpm]
-    if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.validate.result == 'success' && needs.deb.result == 'success' && needs.rpm.result == 'success'
+    if: always() && needs.validate.result == 'success' && needs.deb.result == 'success' && needs.rpm.result == 'success'
     runs-on: ubuntu-24.04
     permissions:
-      contents: write
+      contents: ${{ github.event_name == 'push' && 'write' || 'read' }}
     steps:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
           fetch-depth: 0
-      - name: Download binaries and source bundles from this run
+      - name: Download validated artifacts from this run
         uses: actions/download-artifact@v8
         with:
           path: incoming
-      - name: Validate complete candidate and create unpublished draft if new
+      - name: Verify release asset set (PR does not publish)
+        if: github.event_name == 'pull_request'
+        run: bash scripts/ci/release.sh verify incoming
+      - name: Create unpublished draft from validated main build
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ github.token }}
         run: bash scripts/ci/release.sh create incoming
