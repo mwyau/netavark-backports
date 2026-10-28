@@ -37,7 +37,7 @@ for f in "${binaries[@]}"; do
 done
 for suite in trixie resolute stonking forky sid; do
   for arch in amd64 arm64; do
-    matches=("$work"/netavark_*"+~xddd$REVISION~$suite"_"$arch".deb)
+    matches=("$work"/netavark_*"a~xddd$REVISION~$suite"_"$arch".deb)
     [[ "${#matches[@]}" == 1 ]] || { echo "Missing $suite/$arch DEB" >&2; exit 1; }
     [[ "$(dpkg-deb --field "${matches[0]}" Package)" == netavark ]] || exit 1
   done

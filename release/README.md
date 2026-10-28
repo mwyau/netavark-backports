@@ -8,7 +8,7 @@ Each distro is built from its own source package, with the relevant patch from `
 
 When the distribution publishes a new source revision, review its changes and update the lock in a pull request. Adjust the patch if needed. The scripts reject unexpected source versions rather than quietly rebuilding from a different base.
 
-The downstream revision is the single integer in [`revision.txt`](revision.txt), initially `1`. It produces `xddd1` in package versions. Debian/Ubuntu versions use `+~xddd1~<suite>`: they supersede the native version they patch but leave room for a later official `+deb...` security update. Increase it to `2` when preparing a new set of changed packages after the first release. CI run numbers, reruns and documentation changes do not increment it.
+The downstream revision is the single integer in [`revision.txt`](revision.txt), initially `1`. It produces `xddd1` in package versions. Debian/Ubuntu versions use `a~xddd1~<suite>` after the native revision. This sorts above the native version being patched but below later native `+deb...` or `ubuntu...` updates. Increase it to `2` when preparing a new set of changed packages after the first release. CI run numbers, reruns and documentation changes do not increment it.
 
 A [daily source check](../.github/workflows/check-upstream.yml) compares these versions against each distribution's current source repository. It reports mismatches without updating package versions or publishing packages. Review upstream packaging changes and the patch before changing the version file or incrementing the downstream revision.
 
