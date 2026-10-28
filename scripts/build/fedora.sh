@@ -8,7 +8,7 @@ ARCH="$(rpm --eval '%{_arch}')"
 [[ "$ARCH" == "$EXPECTED_ARCH" ]] || { echo "FAIL: architecture mismatch"; exit 2; }
 grep -q "release $FEDORA_RELEASE" /etc/fedora-release
 dnf -y install dnf-plugins-core rpm-build rpmdevtools git-core patch python3
-REVISION="$(python3 /work/scripts/check-source-version.py --revision fedora "$FEDORA_RELEASE")"
+REVISION="$(python3 /work/scripts/versions.py --revision fedora "$FEDORA_RELEASE")"
 mkdir -p "/work/dist/fedora${FEDORA_RELEASE}/$ARCH" /tmp/netavark-fedora-src
 cd /tmp/netavark-fedora-src
 dnf download --source netavark
@@ -27,7 +27,7 @@ NATIVE_RELEASE_STEM="${NATIVE_RELEASE%.fc$FEDORA_RELEASE}"
 [[ "$NATIVE_RELEASE_STEM" =~ ^[0-9]+([.][0-9]+)*$ ]] || {
   echo "FAIL: native release needs human review: $NATIVE_RELEASE" >&2; exit 1;
 }
-python3 /work/scripts/check-source-version.py fedora "$FEDORA_RELEASE" "$NATIVE_VERSION-$NATIVE_RELEASE"
+python3 /work/scripts/versions.py fedora "$FEDORA_RELEASE" "$NATIVE_VERSION-$NATIVE_RELEASE"
 if [[ "${SOURCE_CHECK_ONLY:-0}" == 1 ]]; then
   echo "Current native source matches release/versions.json: fedora/$FEDORA_RELEASE"
   exit 0

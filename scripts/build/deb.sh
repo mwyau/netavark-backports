@@ -69,7 +69,7 @@ fi
 
 apt-get update
 apt-get install -y --no-install-recommends ca-certificates dpkg-dev devscripts fakeroot quilt python3
-REVISION="$(python3 /work/scripts/check-source-version.py --revision "$source_family" "$SUITE")"
+REVISION="$(python3 /work/scripts/versions.py --revision "$source_family" "$SUITE")"
 # Resolve the highest available NATIVE source revision across release,
 # security and updates pockets. Do not silently remain based on stale -2.
 BASE=""
@@ -84,7 +84,7 @@ dpkg --compare-versions "$BASE" ge "$MINIMUM" || {
   echo "FAIL: distro Netavark $BASE older than required $MINIMUM" >&2; exit 1;
 }
 if [[ "${SOURCE_DISCOVERY_ONLY:-0}" == 1 ]]; then
-  python3 /work/scripts/check-source-version.py "$source_family" "$SUITE" "$BASE"
+  python3 /work/scripts/versions.py "$source_family" "$SUITE" "$BASE"
   exit 0
 fi
 ACTUAL_FAMILY="$(netavark_source_family "$BASE")"
@@ -100,7 +100,7 @@ if [[ -n "$BINARY_CANDIDATE" && "$BINARY_CANDIDATE" != "(none)" ]] &&
   echo "FAIL: native binary $BINARY_CANDIDATE is newer than source $BASE" >&2
   exit 1
 fi
-python3 /work/scripts/check-source-version.py "$source_family" "$SUITE" "$BASE"
+python3 /work/scripts/versions.py "$source_family" "$SUITE" "$BASE"
 netavark_check_source_available "$BASE"
 if [[ "${SOURCE_CHECK_ONLY:-0}" == 1 ]]; then
   echo "Current native source matches release/versions.json: $source_family/$SUITE $BASE"

@@ -34,6 +34,18 @@ def main() -> None:
     validate()
     if sys.argv[1:] == ["--validate"]:
         return
+    if len(sys.argv) == 5 and sys.argv[1] == "--update":
+        family, target, source = sys.argv[2:]
+        item = entry(family, target)
+        if not source.strip() or any(char.isspace() for char in source):
+            sys.exit("Invalid native source version")
+        if item["source"] != source:
+            old = item["source"]
+            item["source"] = source
+            item["revision"] = 1
+            manifest.write_text(json.dumps(versions, indent=2) + "\n")
+            print(f"{family}/{target}: {old} -> {source}, reset revision to 1")
+        return
     if len(sys.argv) == 4 and sys.argv[1] in ("--revision", "--source"):
         item = entry(sys.argv[2], sys.argv[3])
         print(item["revision" if sys.argv[1] == "--revision" else "source"])
@@ -57,7 +69,7 @@ def main() -> None:
             )
         print(f"Native source unchanged: {family}/{target} {actual}")
         return
-    sys.exit("usage: check-source-version.py [--validate|--source FAMILY TARGET|"
+    sys.exit("usage: versions.py [--validate|--update FAMILY TARGET VERSION|--source FAMILY TARGET|"
              "--revision FAMILY TARGET|FAMILY TARGET ACTUAL]")
 
 

@@ -3,7 +3,7 @@
 set -Eeuo pipefail
 
 ci_revision() {
-  REVISION="$(python3 "${GITHUB_WORKSPACE:?}/scripts/check-source-version.py" --revision "$1" "$2")"
+  REVISION="$(python3 "${GITHUB_WORKSPACE:?}/scripts/versions.py" --revision "$1" "$2")"
   export REVISION
 }
 

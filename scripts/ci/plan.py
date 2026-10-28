@@ -65,18 +65,17 @@ def plan(old: dict, new: dict, paths: set[str], event: str) -> tuple[set[str], s
             match = re.fullmatch(r"patches/([^/]+)/.*", path)
             if match:
                 changed |= PATCHES.get(match.group(1), ALL)
-            elif path in {"scripts/build/deb.sh", "scripts/deb-version.sh",
-                          "scripts/ci/deb.sh"}:
+            elif path in {"scripts/build/deb.sh", "scripts/deb-version.sh"}:
                 changed |= set(DEB)
             elif path == "scripts/build/fedora.sh":
                 changed |= {key for key in RPM if key.startswith("fedora/")}
             elif path == "scripts/build/opensuse.sh":
                 changed |= {key for key in RPM if key.startswith("opensuse/")}
-            elif path == "scripts/ci/rpm.sh":
-                changed |= set(RPM)
+            elif path == "scripts/ci/run.sh":
+                changed |= ALL
             elif (path.startswith("tests/") or path in {
-                  "scripts/ci/common.sh", "scripts/ci/plan.py",
-                  "scripts/check-source-version.py", ".github/workflows/build.yml"}):
+                  "scripts/ci/run.sh", "scripts/ci/plan.py",
+                  "scripts/versions.py", ".github/workflows/ci.yml"}):
                 changed |= ALL
     for key in version_changes:
         before, after = previous.get(key), current.get(key)

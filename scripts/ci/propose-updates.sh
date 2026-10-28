@@ -12,7 +12,7 @@ for file in discovered/*.txt; do
   version="$(<"$file")"
   branch="bot/update-$family-$target"
   git switch -C "$branch" origin/main
-  python3 scripts/ci/update-versions.py "$family" "$target" "$version"
+  python3 scripts/versions.py --update "$family" "$target" "$version"
   if git diff --quiet -- release/versions.json; then
     echo "No change: $family/$target"
     continue
