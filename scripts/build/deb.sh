@@ -15,7 +15,6 @@ case "$SUITE" in
   experimental) MINIMUM=2.0.0-1; FAMILY=2.0; DIST=sid ;;
   *) echo "Unsupported suite: $SUITE" >&2; exit 2 ;;
 esac
-source /work/scripts/deb-version.sh
 source_family=debian
 [[ "$SUITE" == resolute || "$SUITE" == stonking ]] && source_family=ubuntu
 export DEBIAN_FRONTEND=noninteractive
@@ -87,7 +86,7 @@ if [[ "${SOURCE_DISCOVERY_ONLY:-0}" == 1 ]]; then
   python3 /work/scripts/versions.py "$source_family" "$SUITE" "$BASE"
   exit 0
 fi
-ACTUAL_FAMILY="$(netavark_source_family "$BASE")"
+ACTUAL_FAMILY="$(python3 /work/scripts/versions.py --family "$BASE")"
 [[ "$ACTUAL_FAMILY" == "$FAMILY" ]] || {
   echo "FAIL: native Netavark $BASE changed patch family $FAMILY -> $ACTUAL_FAMILY" >&2
   exit 1
@@ -101,12 +100,15 @@ if [[ -n "$BINARY_CANDIDATE" && "$BINARY_CANDIDATE" != "(none)" ]] &&
   exit 1
 fi
 python3 /work/scripts/versions.py "$source_family" "$SUITE" "$BASE"
-netavark_check_source_available "$BASE"
+apt-cache showsrc netavark | awk -v want="$BASE" '
+  /^Version: / && $2 == want { found=1 }
+  END { exit !found }
+' || { echo "Missing matching native deb-src for $BASE" >&2; exit 1; }
 if [[ "${SOURCE_CHECK_ONLY:-0}" == 1 ]]; then
   echo "Current native source matches release/versions.json: $source_family/$SUITE $BASE"
   exit 0
 fi
-VERSION="$(netavark_downstream_version "$BASE" "$REVISION" "$SUITE")"
+VERSION="$(python3 /work/scripts/versions.py --deb-version "$BASE" "$REVISION" "$SUITE")"
 printf 'Selecting native source %s (%s) -> candidate %s\n' "$BASE" "$FAMILY" "$VERSION"
 apt-get build-dep -y "netavark=$BASE"
 

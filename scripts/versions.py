@@ -3,11 +3,35 @@
 import json
 import os
 from pathlib import Path
+import subprocess
 import sys
 
 manifest = Path(__file__).resolve().parent.parent / "release/versions.json"
 versions = json.loads(manifest.read_text())
 
+
+
+DEBIAN_SUITES = {"trixie", "forky", "sid", "experimental"}
+UBUNTU_SUITES = {"resolute", "stonking"}
+
+
+def source_family(version: str) -> str:
+    for family in ("1.14", "1.16", "1.17", "2.0"):
+        if version.startswith(family + ".") and "-" in version:
+            return family
+    sys.exit(f"Unsupported native Netavark source version: {version}")
+
+
+def deb_version(base: str, revision: int, suite: str) -> str:
+    if revision < 1 or suite not in DEBIAN_SUITES | UBUNTU_SUITES:
+        sys.exit("Invalid downstream revision or suite")
+    suffix = "ppaxddd" if suite in UBUNTU_SUITES else "xddd"
+    version = f"{base}{suffix}{revision}~{suite}"
+    subprocess.run(["dpkg", "--validate-version", base], check=True)
+    subprocess.run(["dpkg", "--validate-version", version], check=True)
+    if subprocess.run(["dpkg", "--compare-versions", version, "gt", base]).returncode:
+        sys.exit("Downstream package must supersede the native source")
+    return version
 
 def entry(family: str, target: str) -> dict:
     try:
@@ -41,6 +65,16 @@ def validate() -> None:
 def main() -> None:
     validate()
     if sys.argv[1:] == ["--validate"]:
+        return
+    if len(sys.argv) == 3 and sys.argv[1] == "--family":
+        print(source_family(sys.argv[2]))
+        return
+    if len(sys.argv) == 5 and sys.argv[1] == "--deb-version":
+        try:
+            revision = int(sys.argv[3])
+        except ValueError:
+            sys.exit("Invalid downstream revision")
+        print(deb_version(sys.argv[2], revision, sys.argv[4]))
         return
     if len(sys.argv) == 5 and sys.argv[1] == "--update":
         family, target, source = sys.argv[2:]
@@ -77,7 +111,7 @@ def main() -> None:
             )
         print(f"Native source unchanged: {family}/{target} {actual}")
         return
-    sys.exit("usage: versions.py [--validate|--update FAMILY TARGET VERSION|--source FAMILY TARGET|"
+    sys.exit("usage: versions.py [--validate|--family VERSION|--deb-version BASE REVISION SUITE|\n             --update FAMILY TARGET VERSION|--source FAMILY TARGET|"
              "--revision FAMILY TARGET|FAMILY TARGET ACTUAL]")
 
 

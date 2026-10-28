@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Debian ordering and native revision inheritance regression.
 set -Eeuo pipefail
-source "$(dirname "$0")/../scripts/deb-version.sh"
+version() { python3 scripts/versions.py --deb-version "$@"; }
+family() { python3 scripts/versions.py --family "$@"; }
 for data in \
   '1.14.0-2 trixie 1.14.0-2xddd1~trixie 1.14' \
   '1.14.0-2+deb13u1 trixie 1.14.0-2+deb13u1xddd1~trixie 1.14' \
@@ -10,8 +11,8 @@ for data in \
   '1.17.2-2 stonking 1.17.2-2ppaxddd1~stonking 1.17' \
   '2.0.0-1 experimental 2.0.0-1xddd1~experimental 2.0'; do
   read -r base suite expect family <<<"$data"
-  [[ "$(netavark_downstream_version "$base" 1 "$suite")" == "$expect" ]]
-  [[ "$(netavark_source_family "$base")" == "$family" ]]
+  [[ "$(version "$base" 1 "$suite")" == "$expect" ]]
+  [[ "$(family "$base")" == "$family" ]]
   dpkg --compare-versions "$base" lt "$expect"
 done
 dpkg --compare-versions '1.14.0-2+deb13u2' gt \
@@ -25,7 +26,7 @@ dpkg --compare-versions '1.16.1-3.1ubuntu1' gt '1.16.1-3.1ppaxddd1~resolute'
 dpkg --compare-versions '1.14.0-2xddd2~trixie' gt '1.14.0-2xddd1~trixie'
 dpkg --compare-versions '1.14.0-2+deb13u1xddd1~trixie' gt '1.14.0-2xddd2~trixie'
 dpkg --compare-versions '1.16.1-3.1ubuntu1ppaxddd1~resolute' gt '1.16.1-3.1ubuntu1'
-if netavark_source_family '1.18.0-1'; then
+if family '1.18.0-1'; then
   echo 'FAIL: unsupported family must not silently reuse an older patch' >&2
   exit 1
 fi
@@ -53,5 +54,5 @@ new["debian"]["trixie"] = {"source": "1.14.0-2", "revision": 5}
 assert select(old, new, set(), "push")[1] == {"debian/trixie"}
 PY
 # Names must stay distinct even if Debian testing and unstable use the same source.
-[[ "$(netavark_downstream_version 1.17.2-3 1 forky)" != "$(netavark_downstream_version 1.17.2-3 1 sid)" ]]
+[[ "$(version 1.17.2-3 1 forky)" != "$(version 1.17.2-3 1 sid)" ]]
 echo "PASS: distro-specific version suffixes and native upgrade ordering"
