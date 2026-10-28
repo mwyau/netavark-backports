@@ -13,12 +13,13 @@ def assets_by_target(versions: dict) -> dict[str, set[str]]:
                           ("ubuntu", ("resolute", "stonking"))):
         for suite in names:
             item = versions[family][suite]
-            version = f'{item["source"]}localxddd{item["revision"]}'
+            suffix = "ppaxddd" if family == "ubuntu" else "xddd"
+            version = f'{item["source"]}{suffix}{item["revision"]}~{suite}'
             files = {
                 f"netavark_{version}_{arch}.deb"
                 for arch in ("amd64", "arm64")
             }
-            files.add(f'netavark-source-{suite}-xddd{item["revision"]}.tar.gz')
+            files.add(f'netavark-source-{suite}-{suffix}{item["revision"]}.tar.gz')
             targets[f"{family}/{suite}"] = files
     for family, names in (("fedora", ("43", "44")),
                           ("opensuse", ("16.0", "16.1"))):

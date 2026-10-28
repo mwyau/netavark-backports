@@ -106,7 +106,7 @@ if [[ "${SOURCE_CHECK_ONLY:-0}" == 1 ]]; then
   echo "Current native source matches release/versions.json: $source_family/$SUITE $BASE"
   exit 0
 fi
-VERSION="$(netavark_downstream_version "$BASE" "$REVISION")"
+VERSION="$(netavark_downstream_version "$BASE" "$REVISION" "$SUITE")"
 printf 'Selecting native source %s (%s) -> candidate %s\n' "$BASE" "$FAMILY" "$VERSION"
 apt-get build-dep -y "netavark=$BASE"
 

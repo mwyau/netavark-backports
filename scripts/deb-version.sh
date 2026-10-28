@@ -14,10 +14,15 @@ netavark_source_family() {
 }
 
 netavark_downstream_version() {
-  local base="$1" revision="$2" version
+  local base="$1" revision="$2" suite="$3" suffix version
   [[ "$revision" =~ ^[1-9][0-9]*$ ]] || { echo "Invalid revision" >&2; return 2; }
+  case "$suite" in
+    resolute|stonking) suffix="ppaxddd" ;;
+    trixie|forky|sid|experimental) suffix="xddd" ;;
+    *) echo "Invalid suite: $suite" >&2; return 2 ;;
+  esac
   dpkg --validate-version "$base"
-  version="${base}localxddd${revision}"
+  version="${base}${suffix}${revision}~${suite}"
   dpkg --validate-version "$version"
   dpkg --compare-versions "$version" gt "$base" || {
     echo "Downstream package must supersede the exact native source" >&2

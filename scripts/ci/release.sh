@@ -42,7 +42,31 @@ gh release create "$tag" --repo "$repo" --target "$GITHUB_SHA" \
   --draft --prerelease --title "Netavark backports $tag" \
   --notes "Validated snapshot from $GITHUB_SHA. Unchanged artifacts are carried from ${base:-the first build}. Review versions.json and SHA256SUMS before publication."
 for asset in "$work/candidate"/*; do
-  gh release upload "$tag" "$asset" --repo "$repo"
+  name="${asset##*/}"
+  label=""
+  case "$name" in
+    netavark_*~trixie_*.deb|netavark-source-trixie-*) label="Debian Trixie" ;;
+    netavark_*~forky_*.deb|netavark-source-forky-*) label="Debian Forky" ;;
+    netavark_*~sid_*.deb|netavark-source-sid-*) label="Debian Sid" ;;
+    netavark_*~resolute_*.deb|netavark-source-resolute-*) label="Ubuntu Resolute" ;;
+    netavark_*~stonking_*.deb|netavark-source-stonking-*) label="Ubuntu Stonking" ;;
+    *.fc43.*.rpm) label="Fedora 43" ;;
+    *.fc44.*.rpm) label="Fedora 44" ;;
+    *-160000.*.rpm) label="openSUSE Leap 16.0" ;;
+    *-160100.*.rpm) label="openSUSE Leap 16.1" ;;
+    versions.json) label="Distribution versions" ;;
+    SHA256SUMS) label="SHA256 checksums" ;;
+  esac
+  if [[ "$name" == netavark-source-* || "$name" == *.src.rpm ]]; then
+    label="$label — source"
+  elif [[ "$name" == *.deb ]]; then
+    arch="${name##*_}"
+    label="$label — ${arch%.deb}"
+  elif [[ "$name" == *.rpm ]]; then
+    arch="${name%.rpm}"
+    label="$label — ${arch##*.}"
+  fi
+  gh release upload "$tag" "$asset#${label:-$name}" --repo "$repo"
 done
 gh release view "$tag" --repo "$repo" --json url,isDraft,tagName,assets \
   --jq '{url,isDraft,tagName,assets:[.assets[].name]}'
