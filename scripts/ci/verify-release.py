@@ -6,19 +6,23 @@ from pathlib import Path
 import sys
 
 
-def expected_assets(versions: dict) -> set[str]:
-    files = {"versions.json"}
-    for family, targets in (("debian", ("trixie", "forky", "sid")),
-                            ("ubuntu", ("resolute", "stonking"))):
-        for suite in targets:
+def assets_by_target(versions: dict) -> dict[str, set[str]]:
+    """Expected native binaries and sources for every published target."""
+    targets = {}
+    for family, names in (("debian", ("trixie", "forky", "sid")),
+                          ("ubuntu", ("resolute", "stonking"))):
+        for suite in names:
             item = versions[family][suite]
             version = f'{item["source"]}a~xddd{item["revision"]}~{suite}'
-            for arch in ("amd64", "arm64"):
-                files.add(f"netavark_{version}_{arch}.deb")
+            files = {
+                f"netavark_{version}_{arch}.deb"
+                for arch in ("amd64", "arm64")
+            }
             files.add(f'netavark-source-{suite}-xddd{item["revision"]}.tar.gz')
-    for family, targets in (("fedora", ("43", "44")),
-                            ("opensuse", ("16.0", "16.1"))):
-        for release in targets:
+            targets[f"{family}/{suite}"] = files
+    for family, names in (("fedora", ("43", "44")),
+                          ("opensuse", ("16.0", "16.1"))):
+        for release in names:
             item = versions[family][release]
             source = item["source"]
             revision = item["revision"]
@@ -26,14 +30,20 @@ def expected_assets(versions: dict) -> set[str]:
                 suffix = f".fc{release}"
                 if not source.endswith(suffix):
                     raise ValueError(f"Invalid Fedora source release: {source}")
-                stem = source[:-len(suffix)]
-                package_version = f"{stem}.xddd{revision}{suffix}"
+                version = f"{source[:-len(suffix)]}.xddd{revision}{suffix}"
             else:
-                package_version = f"{source}.xddd{revision}"
-            for arch in ("x86_64", "aarch64"):
-                files.add(f"netavark-{package_version}.{arch}.rpm")
-            files.add(f"netavark-{package_version}.src.rpm")
-    return files
+                version = f"{source}.xddd{revision}"
+            files = {
+                f"netavark-{version}.{arch}.rpm"
+                for arch in ("x86_64", "aarch64")
+            }
+            files.add(f"netavark-{version}.src.rpm")
+            targets[f"{family}/{release}"] = files
+    return targets
+
+
+def expected_assets(versions: dict) -> set[str]:
+    return {"versions.json"} | set().union(*assets_by_target(versions).values())
 
 
 def main() -> None:
