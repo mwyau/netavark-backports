@@ -1,0 +1,59 @@
+name: Check distribution Netavark source versions
+
+on:
+  schedule:
+    - cron: '23 7 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: netavark-source-check
+  cancel-in-progress: false
+
+jobs:
+  check:
+    name: source / ${{ matrix.family }} / ${{ matrix.target }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {family: debian, target: trixie, image: 'debian:trixie'}
+          - {family: debian, target: forky, image: 'debian:forky'}
+          - {family: debian, target: sid, image: 'debian:sid'}
+          - {family: debian, target: experimental, image: 'debian:sid'}
+          - {family: ubuntu, target: resolute, image: 'ubuntu:resolute'}
+          - {family: ubuntu, target: stonking, image: 'ubuntu:stonking'}
+          - {family: fedora, target: '43', image: 'fedora:43'}
+          - {family: fedora, target: '44', image: 'fedora:44'}
+          - {family: opensuse, target: '16.0', image: 'opensuse/leap:16.0'}
+          - {family: opensuse, target: '16.1', image: 'opensuse/leap:16.1'}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Compare with native source repository
+        shell: bash
+        env:
+          FAMILY: ${{ matrix.family }}
+          TARGET: ${{ matrix.target }}
+          IMAGE: ${{ matrix.image }}
+        run: |
+          set -euo pipefail
+          common=(--rm --pull=always -v "$GITHUB_WORKSPACE:/work" -w /work
+            -e SOURCE_CHECK_ONLY=1 -e REVISION=1)
+          case "$FAMILY" in
+            debian|ubuntu)
+              docker run "${common[@]}" -e "SUITE=$TARGET" -e EXPECTED_ARCH=amd64 \
+                "$IMAGE" bash /work/scripts/build/deb.sh ;;
+            fedora)
+              docker run "${common[@]}" -e "FEDORA_RELEASE=$TARGET" -e EXPECTED_ARCH=x86_64 \
+                "$IMAGE" bash /work/scripts/build/fedora.sh ;;
+            opensuse)
+              docker run "${common[@]}" -e "LEAP_VERSION=$TARGET" -e EXPECTED_ARCH=x86_64 \
+                "$IMAGE" bash /work/scripts/build/opensuse.sh ;;
+            *) exit 2 ;;
+          esac

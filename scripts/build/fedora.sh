@@ -29,7 +29,11 @@ NATIVE_RELEASE_STEM="${NATIVE_RELEASE%.fc$FEDORA_RELEASE}"
 [[ "$NATIVE_RELEASE_STEM" =~ ^[0-9]+([.][0-9]+)*$ ]] || {
   echo "FAIL: native release needs human review: $NATIVE_RELEASE" >&2; exit 1;
 }
-python3 /work/scripts/check-source-lock.py fedora "$FEDORA_RELEASE" "$NATIVE_VERSION-$NATIVE_RELEASE"
+python3 /work/scripts/check-source-version.py fedora "$FEDORA_RELEASE" "$NATIVE_VERSION-$NATIVE_RELEASE"
+if [[ "${SOURCE_CHECK_ONLY:-0}" == 1 ]]; then
+  echo "Current native source matches release/source-versions.json: fedora/$FEDORA_RELEASE"
+  exit 0
+fi
 printf 'Native Fedora %s source: %s:%s-%s\n' "$FEDORA_RELEASE" "$NATIVE_EPOCH" "$NATIVE_VERSION" "$NATIVE_RELEASE"
 rpm -ivh --nodeps "${SRPMS[0]}"
 SPEC="$(find /root/rpmbuild/SPECS -maxdepth 1 -name netavark.spec -print -quit)"

@@ -4,11 +4,13 @@ This guide covers source versions, CI artifacts, release drafts and publication.
 
 ## Prepare a change
 
-Each distro is built from its own source package, with the relevant patch from `patches/` applied through quilt or its RPM SPEC. Native source versions are recorded in [`sources.lock.json`](sources.lock.json).
+Each distro is built from its own source package, with the relevant patch from `patches/` applied through quilt or its RPM SPEC. Expected native source versions are recorded in [`source-versions.json`](source-versions.json). The file tracks Debian/Ubuntu source versions and Fedora/openSUSE version-release values. It does not pin source tarball checksums.
 
 When the distribution publishes a new source revision, review its changes and update the lock in a pull request. Adjust the patch if needed. The scripts reject unexpected source versions rather than quietly rebuilding from a different base.
 
 The downstream revision is the single integer in [`revision.txt`](revision.txt), initially `1`. It produces `xddd1` in package versions. Increase it to `2` when preparing a new set of changed packages after the first release. CI run numbers, reruns and documentation changes do not increment it.
+
+A [daily source check](../.github/workflows/check-upstream.yml) compares these versions against each distribution's current source repository. It reports mismatches without updating package versions or publishing packages. Review upstream packaging changes and the patch before changing the version file or incrementing the downstream revision.
 
 ## Build and test
 
@@ -85,4 +87,4 @@ Verify installation, upgrade and rollback from the **hosted** APT repository on 
 
 ## After publication
 
-Record the release revision, the native distro sources used, distribution build results and package locations. Update the source lock and downstream revision in the next reviewed package-update PR.
+Record the release revision, the native distro sources used, distribution build results and package locations. Update the source versions and downstream revision in the next reviewed package-update PR.

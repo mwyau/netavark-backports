@@ -95,8 +95,14 @@ if [[ -n "$BINARY_CANDIDATE" && "$BINARY_CANDIDATE" != "(none)" ]] &&
   echo "FAIL: native binary $BINARY_CANDIDATE is newer than source $BASE" >&2
   exit 1
 fi
-python3 /work/scripts/check-source-lock.py deb "$SUITE" "$BASE"
+source_family=debian
+[[ "$SUITE" == resolute || "$SUITE" == stonking ]] && source_family=ubuntu
+python3 /work/scripts/check-source-version.py "$source_family" "$SUITE" "$BASE"
 netavark_check_source_available "$BASE"
+if [[ "${SOURCE_CHECK_ONLY:-0}" == 1 ]]; then
+  echo "Current native source matches release/source-versions.json: $source_family/$SUITE $BASE"
+  exit 0
+fi
 VERSION="$(netavark_downstream_version "$BASE" "$REVISION" "$SUITE")"
 printf 'Selecting native source %s (%s) -> candidate %s\n' "$BASE" "$FAMILY" "$VERSION"
 apt-get build-dep -y "netavark=$BASE"
