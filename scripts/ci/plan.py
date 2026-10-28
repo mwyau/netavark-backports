@@ -23,15 +23,6 @@ RPM = {
 }
 ALL = set(DEB) | set(RPM)
 RELEASE = ALL - {"debian/experimental"}
-PATCHES = {
-    "1.14": {"debian/trixie", "opensuse/16.0"},
-    "1.16": {"ubuntu/resolute"},
-    "1.17": {"debian/forky", "debian/sid", "ubuntu/stonking",
-             "fedora/43", "fedora/44", "opensuse/16.1"},
-    "2.0": {"debian/experimental"},
-}
-
-
 def git(*args: str) -> str:
     return subprocess.check_output(["git", *args], text=True).strip()
 
@@ -53,30 +44,48 @@ def entries(data: dict) -> dict:
     }
 
 
+def affected_by_files(paths: set[str], current: dict) -> tuple[set[str], set[str]]:
+    """Return targets requiring CI and targets requiring new package revisions."""
+    all_targets = set()
+    packaging = set()
+    for path in paths:
+        match = re.fullmatch(r"patches/(\d+\.\d+)/.*", path)
+        if match:
+            family = match.group(1)
+            relevant = {key for key, item in current.items()
+                        if item["source"].split("-", 1)[0].startswith(family + ".")}
+            if not relevant:
+                raise ValueError(f"{path}: no distribution uses this patch family")
+            packaging |= relevant
+        elif path in {"scripts/build/deb.sh", "scripts/deb-version.sh"}:
+            packaging |= set(DEB)
+        elif path == "scripts/build/fedora.sh":
+            packaging |= {key for key in RPM if key.startswith("fedora/")}
+        elif path == "scripts/build/opensuse.sh":
+            packaging |= {key for key in RPM if key.startswith("opensuse/")}
+        elif (path.startswith("tests/") or path in {
+              "scripts/ci/run.sh", "scripts/ci/plan.py", "scripts/versions.py",
+              ".github/workflows/ci.yml"}):
+            all_targets |= ALL
+    return all_targets | packaging, packaging
+
+
 def plan(old: dict, new: dict, paths: set[str], event: str) -> tuple[set[str], set[str]]:
     previous, current = entries(old), entries(new)
+    if set(current) != ALL:
+        raise ValueError("Missing or unknown distribution target in versions.json")
     version_changes = {key for key in ALL if previous.get(key) != current.get(key)}
-    # The first release of this repository builds every release target.
     if not previous:
         return set(ALL), version_changes
-    changed = set(version_changes)
-    if event != "push":
-        for path in paths:
-            match = re.fullmatch(r"patches/([^/]+)/.*", path)
-            if match:
-                changed |= PATCHES.get(match.group(1), ALL)
-            elif path in {"scripts/build/deb.sh", "scripts/deb-version.sh"}:
-                changed |= set(DEB)
-            elif path == "scripts/build/fedora.sh":
-                changed |= {key for key in RPM if key.startswith("fedora/")}
-            elif path == "scripts/build/opensuse.sh":
-                changed |= {key for key in RPM if key.startswith("opensuse/")}
-            elif path == "scripts/ci/run.sh":
-                changed |= ALL
-            elif (path.startswith("tests/") or path in {
-                  "scripts/ci/run.sh", "scripts/ci/plan.py",
-                  "scripts/versions.py", ".github/workflows/ci.yml"}):
-                changed |= ALL
+    touched, packaging = affected_by_files(paths, current)
+    if event == "push":
+        missing = packaging - version_changes
+        if missing:
+            raise ValueError("Packaging changed without increasing downstream revisions: "
+                             + ", ".join(sorted(missing)))
+        changed = version_changes
+    else:
+        changed = touched | version_changes
     for key in version_changes:
         before, after = previous.get(key), current.get(key)
         if not before or not after:
@@ -87,7 +96,6 @@ def plan(old: dict, new: dict, paths: set[str], event: str) -> tuple[set[str], s
         elif after["revision"] != 1:
             raise ValueError(f"{key}: new native source must reset revision to 1")
     return changed, version_changes
-
 
 def matrices(targets: set[str]) -> tuple[list[dict], list[dict]]:
     deb, rpm = [], []

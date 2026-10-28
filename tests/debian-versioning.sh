@@ -34,6 +34,8 @@ dpkg --compare-versions '1.14.0-2+deb13u1xddd1~trixie' gt '1.14.0-2xddd9~trixie'
 dpkg --compare-versions '1.14.0-2+deb13u2' gt '1.14.0-2+deb13u1xddd9~trixie'
 python3 - <<'PY'
 import runpy
+import json
+from pathlib import Path
 
 select = runpy.run_path("scripts/ci/plan.py")["plan"]
 old = {"schema": 1, "debian": {"trixie": {"source": "1.14.0-2", "revision": 4}}}
