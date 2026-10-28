@@ -2,10 +2,11 @@
 # One RPM-family build+test job per release/arch; Leap native builds are experimental.
 set -Eeuo pipefail
 source "$(dirname "$0")/common.sh"
-ci_require GITHUB_WORKSPACE RPM_PLATFORM RPM_IMAGE RPM_ARCH REVISION
+ci_require GITHUB_WORKSPACE RPM_PLATFORM RPM_IMAGE RPM_ARCH
 case "$RPM_PLATFORM" in
   fedora43|fedora44)
     release="${RPM_PLATFORM#fedora}"
+    ci_revision fedora "$release"
     ci_container build "$RPM_IMAGE" \
       -e "FEDORA_RELEASE=$release" \
       -e "EXPECTED_ARCH=$RPM_ARCH" \
@@ -33,6 +34,7 @@ case "$RPM_PLATFORM" in
       leap16) version=16.0 ;;
       leap161) version=16.1 ;;
     esac
+    ci_revision opensuse "$version"
     ci_container build "$RPM_IMAGE" \
       -e "LEAP_VERSION=$version" -e "EXPECTED_ARCH=$RPM_ARCH" \
       -e "REVISION=$REVISION" \

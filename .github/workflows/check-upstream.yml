@@ -44,7 +44,7 @@ jobs:
         run: |
           set -euo pipefail
           common=(--rm --pull=always -v "$GITHUB_WORKSPACE:/work" -w /work
-            -e SOURCE_CHECK_ONLY=1 -e REVISION=1)
+            -e SOURCE_CHECK_ONLY=1)
           case "$FAMILY" in
             debian|ubuntu)
               docker run "${common[@]}" -e "SUITE=$TARGET" -e EXPECTED_ARCH=amd64 \

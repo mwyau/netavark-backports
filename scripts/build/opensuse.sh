@@ -3,7 +3,6 @@
 set -Eeuo pipefail
 LEAP_VERSION="${LEAP_VERSION:?expected 16.0 or 16.1}"
 EXPECTED_ARCH="${EXPECTED_ARCH:?x86_64 or aarch64}"
-REVISION="${REVISION:?}"
 [[ "$LEAP_VERSION" == 16.0 || "$LEAP_VERSION" == 16.1 ]] || exit 2
 [[ "$REVISION" =~ ^[1-9][0-9]*$ ]] || exit 2
 ARCH="$(rpm --eval '%{_arch}')"
@@ -12,6 +11,7 @@ case "$LEAP_VERSION" in
   16.0) FAMILY=1.14; PLATFORM=leap16 ;;
   16.1) FAMILY=1.17; PLATFORM=leap161 ;;
 esac
+REVISION="$(python3 /work/scripts/check-source-version.py --revision opensuse "$LEAP_VERSION")"
 zypper --non-interactive --gpg-auto-import-keys refresh
 zypper --non-interactive install --no-recommends \
   rpm-build patch python3 findutils tar gzip

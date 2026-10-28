@@ -1,0 +1,51 @@
+{
+  "schema": 1,
+  "debian": {
+    "trixie": {
+      "source": "1.14.0-2",
+      "revision": 1
+    },
+    "forky": {
+      "source": "1.17.2-3",
+      "revision": 1
+    },
+    "sid": {
+      "source": "1.17.2-3",
+      "revision": 1
+    },
+    "experimental": {
+      "source": "2.0.0-1",
+      "revision": 1
+    }
+  },
+  "ubuntu": {
+    "resolute": {
+      "source": "1.16.1-3.1",
+      "revision": 1
+    },
+    "stonking": {
+      "source": "1.17.2-2",
+      "revision": 1
+    }
+  },
+  "fedora": {
+    "43": {
+      "source": "1.17.2-1.fc43",
+      "revision": 1
+    },
+    "44": {
+      "source": "1.17.2-1.fc44",
+      "revision": 1
+    }
+  },
+  "opensuse": {
+    "16.0": {
+      "source": "1.14.1-160000.2.2",
+      "revision": 1
+    },
+    "16.1": {
+      "source": "1.17.2-160100.2.2",
+      "revision": 1
+    }
+  }
+}

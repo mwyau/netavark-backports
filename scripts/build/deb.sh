@@ -2,8 +2,6 @@
 set -Eeuo pipefail
 SUITE="${SUITE:?Set Debian suite}"
 EXPECTED_ARCH="${EXPECTED_ARCH:?Set amd64 or arm64}"
-REVISION="${REVISION:-1}"
-[[ "$REVISION" =~ ^[1-9][0-9]*$ ]] || exit 2
 ARCH="$(dpkg --print-architecture)"
 [[ "$ARCH" == "$EXPECTED_ARCH" ]] || { echo "Architecture mismatch: $ARCH vs $EXPECTED_ARCH" >&2; exit 2; }
 # Keep the minimum native revision and expected patch-family independently.
@@ -18,6 +16,9 @@ case "$SUITE" in
   *) echo "Unsupported suite: $SUITE" >&2; exit 2 ;;
 esac
 source /work/scripts/deb-version.sh
+source_family=debian
+[[ "$SUITE" == resolute || "$SUITE" == stonking ]] && source_family=ubuntu
+REVISION="$(python3 /work/scripts/check-source-version.py --revision "$source_family" "$SUITE")"
 export DEBIAN_FRONTEND=noninteractive
 if [[ "$SUITE" == experimental ]]; then
   cat >/etc/apt/sources.list.d/netavark-source.sources <<'EOF'
@@ -95,8 +96,6 @@ if [[ -n "$BINARY_CANDIDATE" && "$BINARY_CANDIDATE" != "(none)" ]] &&
   echo "FAIL: native binary $BINARY_CANDIDATE is newer than source $BASE" >&2
   exit 1
 fi
-source_family=debian
-[[ "$SUITE" == resolute || "$SUITE" == stonking ]] && source_family=ubuntu
 python3 /work/scripts/check-source-version.py "$source_family" "$SUITE" "$BASE"
 netavark_check_source_available "$BASE"
 if [[ "${SOURCE_CHECK_ONLY:-0}" == 1 ]]; then
@@ -114,6 +113,9 @@ DIR="$(find . -maxdepth 1 -mindepth 1 -type d -name 'netavark-*' -print -quit)"
 [[ -n "$DIR" ]] || { echo "Missing extracted Debian source" >&2; exit 1; }
 cd "$DIR"
 [[ "$(dpkg-parsechangelog -SVersion)" == "$BASE" ]] || { echo "Source version changed" >&2; exit 1; }
+# Ubuntu Stonking 1.17.2-2 requires dropping obsolete native downgrade patches
+# to build with the current distro Rust dependencies (Debian bug #1145651).
+# This is independent of the network backport.
 # Ubuntu Stonking carries an obsolete prost 0.12.6 quilt downgrade,
 # while upstream Netavark 1.17.2 supports the distro's prost 0.14.
 # Debian fixed the same problem in netavark 1.17.2-3 (bug #1145651)

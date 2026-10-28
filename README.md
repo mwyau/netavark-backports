@@ -15,7 +15,7 @@ Distribution-native packages carrying the fix for published ports across isolate
 | openSUSE Leap 16.0, 16.1 | 1.14, 1.17 | RPM (under development) |
 | Debian Experimental | 2.0 | Build experiment |
 
-AMD64/x86-64 and ARM64/AArch64 are tested in GitHub Actions. The openSUSE build and tests are being developed; Leap packages are not yet part of a release.
+AMD64/x86-64 and ARM64/AArch64 are tested in GitHub Actions. Both Leap releases passed the native build and dual-stack networking matrix and are included in validated release candidates.
 
 ## Building
 
@@ -36,6 +36,6 @@ The resulting packages and source files are saved in `dist/`. Fedora and openSUS
 
 [GitHub Actions](.github/workflows/build.yml) builds and tests candidate binaries with Podman on isolated IPv4/IPv6 networks. Passing jobs attach their original DEB/RPM files and distribution source packages as workflow artifacts.
 
-After a release change is merged and the main-branch tests pass, CI prepares a **draft GitHub Release**. Publication to [GitHub Releases](../../releases), an Ubuntu PPA, Fedora COPR or a Debian APT repository is separate.
+After a release change is merged and the main-branch tests pass, CI prepares a **draft GitHub Release**. Native source versions and independent per-distribution downstream revisions are recorded in [`release/versions.json`](release/versions.json). Publication to [GitHub Releases](../../releases), an Ubuntu PPA, Fedora COPR or a Debian APT repository is separate.
 
 See [release instructions](release/README.md) for package versioning, source artifacts and publication.

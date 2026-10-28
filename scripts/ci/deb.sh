@@ -2,12 +2,16 @@
 # One native .deb build and validation per suite and architecture.
 set -Eeuo pipefail
 source "$(dirname "$0")/common.sh"
-ci_require GITHUB_WORKSPACE SUITE EXPECTED_ARCH REVISION
+ci_require GITHUB_WORKSPACE SUITE EXPECTED_ARCH
 case "$SUITE" in
   resolute|stonking) image="ubuntu:$SUITE" ;;
   experimental) image="debian:sid" ;;
   trixie|forky|sid) image="debian:$SUITE" ;;
   *) echo "Unsupported Debian/Ubuntu suite: $SUITE" >&2; exit 2 ;;
+esac
+case "$SUITE" in
+  resolute|stonking) ci_revision ubuntu "$SUITE" ;;
+  *) ci_revision debian "$SUITE" ;;
 esac
 
 ci_container build "$image" -e "SUITE=$SUITE" \

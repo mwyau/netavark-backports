@@ -2,9 +2,8 @@
 # Rebuild Fedora 43/44 native source RPM with PR #1483 only.
 set -Eeuo pipefail
 FEDORA_RELEASE="${FEDORA_RELEASE:?expected Fedora 43 or 44}"
-REVISION="${REVISION:?positive integer downstream revision required}"
-[[ "$REVISION" =~ ^[1-9][0-9]*$ ]] || { echo "Invalid downstream revision" >&2; exit 2; }
 [[ "$FEDORA_RELEASE" == 43 || "$FEDORA_RELEASE" == 44 ]] || { echo "Unsupported Fedora release" >&2; exit 2; }
+REVISION="$(python3 /work/scripts/check-source-version.py --revision fedora "$FEDORA_RELEASE")"
 EXPECTED_ARCH="${EXPECTED_ARCH:?expected x86_64 or aarch64}"
 ARCH="$(rpm --eval '%{_arch}')"
 [[ "$ARCH" == "$EXPECTED_ARCH" ]] || { echo "FAIL: architecture mismatch"; exit 2; }
@@ -14,14 +13,13 @@ mkdir -p "/work/dist/fedora${FEDORA_RELEASE}/$ARCH" /tmp/netavark-fedora-src
 cd /tmp/netavark-fedora-src
 dnf download --source netavark
 shopt -s nullglob
-SRPMS=(netavark-1.17.2-*.src.rpm)
-[[ "${#SRPMS[@]}" == 1 ]] || { echo "FAIL: missing pinned Fedora $FEDORA_RELEASE 1.17.2 SRPM"; exit 1; }
+SRPMS=(netavark-*.src.rpm)
+[[ "${#SRPMS[@]}" == 1 ]] || { echo "FAIL: expected exactly one Fedora Netavark SRPM"; exit 1; }
 # Preserve the exact native Fedora SRPM release (including a security
 # update), rather than resetting it to Release: 1 each CI invocation.
 NATIVE_RELEASE="$(rpm -qp --qf '%{RELEASE}' "${SRPMS[0]}")"
 NATIVE_EPOCH="$(rpm -qp --qf '%{EPOCH}' "${SRPMS[0]}")"
 NATIVE_VERSION="$(rpm -qp --qf '%{VERSION}' "${SRPMS[0]}")"
-[[ "$NATIVE_VERSION" == 1.17.2 ]] || { echo "FAIL: source version changed"; exit 1; }
 [[ "$NATIVE_RELEASE" == *".fc$FEDORA_RELEASE" ]] || {
   echo "FAIL: unexpected Fedora native SRPM release $NATIVE_RELEASE" >&2; exit 1;
 }
@@ -34,6 +32,7 @@ if [[ "${SOURCE_CHECK_ONLY:-0}" == 1 ]]; then
   echo "Current native source matches release/source-versions.json: fedora/$FEDORA_RELEASE"
   exit 0
 fi
+[[ "$NATIVE_VERSION" == 1.17.2 ]] || { echo "FAIL: unsupported Netavark patch family"; exit 1; }
 printf 'Native Fedora %s source: %s:%s-%s\n' "$FEDORA_RELEASE" "$NATIVE_EPOCH" "$NATIVE_VERSION" "$NATIVE_RELEASE"
 rpm -ivh --nodeps "${SRPMS[0]}"
 SPEC="$(find /root/rpmbuild/SPECS -maxdepth 1 -name netavark.spec -print -quit)"

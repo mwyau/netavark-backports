@@ -4,13 +4,13 @@ This guide covers source versions, CI artifacts, release drafts and publication.
 
 ## Prepare a change
 
-Each distro is built from its own source package, with the relevant patch from `patches/` applied through quilt or its RPM SPEC. Expected native source versions are recorded in [`source-versions.json`](source-versions.json). The file tracks Debian/Ubuntu source versions and Fedora/openSUSE version-release values. It does not pin source tarball checksums.
+Each distro is built from its own source package, with the relevant patch from `patches/` applied through quilt or its RPM SPEC. Expected native source versions are recorded in [`versions.json`](versions.json). The file tracks Debian/Ubuntu source versions, Fedora/openSUSE version-release values, and an independent positive downstream revision for each distribution release. It does not pin source tarball checksums.
 
-When the distribution publishes a new source revision, review its changes and update the lock in a pull request. Adjust the patch if needed. The scripts reject unexpected source versions rather than quietly rebuilding from a different base.
+When the distribution publishes a new source revision, review its changes and update that entry in a pull request. Adjust the patch if needed. The scripts reject unexpected source versions rather than quietly rebuilding from a different base.
 
-The downstream revision is the single integer in [`revision.txt`](revision.txt), initially `1`. It produces `xddd1` in package versions. Debian/Ubuntu versions use `a~xddd1~<suite>` after the native revision. This sorts above the native version being patched but below later native `+deb...` or `ubuntu...` updates. Increase it to `2` when preparing a new set of changed packages after the first release. CI run numbers, reruns and documentation changes do not increment it.
+Each distribution release has an independent `revision` integer in [`versions.json`](versions.json), initially `1`. It produces `xddd1` in the native package version. Increase **only the affected distribution's** revision when rebuilding or changing its backport. Both architectures of one distribution release share this revision. A CI rerun or documentation change does not increase package revisions.
 
-A [daily source check](../.github/workflows/check-upstream.yml) compares these versions against each distribution's current source repository. It reports mismatches without updating package versions or publishing packages. Review upstream packaging changes and the patch before changing the version file or incrementing the downstream revision.
+The [daily source check](../.github/workflows/check-upstream.yml) compares current native sources against reviewed `source` values without changing the manifest or publishing packages. Review upstream changes and adjust the patch before updating a locked source version. Ubuntu Stonking 1.17.2-2 needs two obsolete native prost/mozim downgrade patches excluded to build against the distribution's current Rust packages (Debian bug #1145651). This is separate from the nftables fix.
 
 ## Build and test
 
@@ -24,23 +24,17 @@ Each passing job uploads its original package binary as a single downloadable Ac
 | --- | --- | --- |
 | Debian/Ubuntu | `source-deb-<suite>` (source files bundled together) | `dpkg-buildpackage -S -sa -us -uc` |
 | Fedora | One native modified `.src.rpm` per Fedora version | `rpmbuild -ba` |
-| openSUSE Leap | Modified `.src.rpm` if the experimental build succeeds | Native Leap SPEC and `rpmbuild -ba` |
+| openSUSE Leap | Modified `.src.rpm` | Native Leap SPEC and `rpmbuild -ba` |
 
 Only one source artifact per distro release is uploaded, from the x86-64/AMD64 build; both architectures compile from the same reviewed native source version.
 
 ## Draft GitHub releases
 
-Once all required checks pass on `main`, the workflow collects the artifacts **from that same CI run** and automatically creates a draft GitHub Release for a previously unused downstream revision.
+Once all required checks pass on `main`, the workflow collects the artifacts **from that same CI run** and creates a draft GitHub Release for a new reviewed package revision. Pull requests run the same asset assembly and verification without creating a release.
 
-The initial draft includes:
+The draft contains 10 Debian/Ubuntu DEBs, 4 Fedora RPMs and 4 Leap RPMs, their 9 native source bundles/RPMs, `versions.json` and `SHA256SUMS`. Debian Experimental remains build-only.
 
-- 10 Debian/Ubuntu DEB files (five releases, two architectures).
-- 4 Fedora RPM files (two releases, two architectures).
-- Five Debian/Ubuntu source bundles, two Fedora source RPMs, and `SHA256SUMS`.
-
-Leap's new build is experimental. It is not part of the public release until its native RPMs pass both architectures' fresh-install and in-place-upgrade tests. Debian Experimental also remains outside the release.
-
-The tag follows `nv1483-r1-g<commit-sha12>`. Re-running CI doesn't rewrite an existing tag. A documentation-only merge does not create another draft for an already allocated revision. Source or build changes after a release require a new revision.
+The tag is `netavark-g<commit-sha12>`, identifying the exact validated commit rather than a global package revision. No new draft is created when only documentation changes or the reviewed package revisions have not changed.
 
 ## Approve GitHub publication
 
@@ -77,7 +71,7 @@ Select Fedora 43 x86-64/AArch64 for the Fedora 43 source package and Fedora 44 f
 
 ## openSUSE OBS
 
-The native Leap source RPM builder is in [`scripts/build/opensuse.sh`](../scripts/build/opensuse.sh), but remains experimental. After Leap 16.0 and 16.1 each pass AMD64/ARM64 equivalent networking regressions, submit their native SPEC, source archives and patch to an OBS project. Let OBS build and host the openSUSE binaries. Fedora RPMs are not interchangeable with Leap RPMs.
+Leap 16.0 and 16.1 are validated release targets. Submit their native SPEC, source archives and patch to an OBS project after approval; OBS should build and host its own binaries. Fedora RPMs are not interchangeable with Leap RPMs.
 
 ## Debian APT repository
 
@@ -87,4 +81,4 @@ Verify installation, upgrade and rollback from the **hosted** APT repository on 
 
 ## After publication
 
-Record the release revision, the native distro sources used, distribution build results and package locations. Update the source versions and downstream revision in the next reviewed package-update PR.
+Record the release revision, the native distro sources used, distribution build results and package locations. Update the native source and only affected distribution revisions in the next reviewed package-update PR.
