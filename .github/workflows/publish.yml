@@ -40,14 +40,14 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          [[ "$RELEASE_TAG" =~ ^netavark-g[0-9a-f]{12}$ ]]
+          [[ "$RELEASE_TAG" =~ ^netavark-[0-9]{8}\.[1-9][0-9]*$ ]]
           gh release view "$RELEASE_TAG" --repo "$GH_REPO" --json isDraft,isPrerelease \
             --jq 'select(.isDraft == true and .isPrerelease == true)' | grep -q .
           target="$(gh release view "$RELEASE_TAG" --repo "$GH_REPO" --json targetCommitish --jq .targetCommitish)"
           [[ "$target" =~ ^[0-9a-f]{40}$ ]]
-          [[ "$RELEASE_TAG" == "netavark-g$(printf '%.12s' "$target")" ]]
           git merge-base --is-ancestor "$target" HEAD
-          [[ "$(git rev-parse "$RELEASE_TAG^{commit}")" == "$target" ]]
+          # GitHub creates the missing release tag when a draft is published;
+          # drafts with a target commit do not require a pre-existing Git ref.
           gh release download "$RELEASE_TAG" --repo "$GH_REPO" --dir incoming
           git show "$target:release/versions.json" > reviewed-versions.json
           python3 scripts/ci/verify-release.py incoming reviewed-versions.json

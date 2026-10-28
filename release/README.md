@@ -34,7 +34,7 @@ Once all required checks pass on `main`, the workflow collects the artifacts **f
 
 The draft contains 10 Debian/Ubuntu DEBs, 4 Fedora RPMs and 4 Leap RPMs, their 9 native source bundles/RPMs, `versions.json` and `SHA256SUMS`. Debian Experimental remains build-only.
 
-The tag is `netavark-g<commit-sha12>`, identifying the exact validated commit rather than a global package revision. No new draft is created when only documentation changes or the reviewed package revisions have not changed.
+Tags use `netavark-YYYYMMDD.N` (UTC candidate date and a per-day sequence starting at 1), independently of distribution package revisions. For example, `netavark-20261028.1`. The draft records the exact tested main-branch commit in its target and release notes. Its name does not change if approved on a later day. The Git tag is created when the draft is published. No new draft is created for documentation-only changes or when reviewed package revisions have not changed. A rerun verifies that an existing release is complete.
 
 ## Approve GitHub publication
 

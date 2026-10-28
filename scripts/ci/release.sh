@@ -73,9 +73,70 @@ fi
   echo "Draft creation is restricted to the main-branch push workflow" >&2; exit 2;
 }
 : "$GH_TOKEN" "$GITHUB_REPOSITORY" "$GITHUB_SHA"
-tag="netavark-g$(printf '%.12s' "$GITHUB_SHA")"
-previous="$(gh release list --repo "$GITHUB_REPOSITORY" --limit 1000 --json tagName \
-  --jq '.[].tagName' | grep -E '^netavark-g[0-9a-f]{12}$' | head -n1 || true)"
+# Each draft labels its UTC preparation day; numbering is independent of xdddN.
+# Keep the exact commit in the draft target and notes, not in the public tag.
+tags="$(gh release list --repo "$GITHUB_REPOSITORY" --limit 1000 --json tagName --jq '.[].tagName')"
+previous="$(printf '%s\n' "$tags" | grep -E '^netavark-[0-9]{8}\.[1-9][0-9]*
+if [[ -n "$previous" ]]; then
+  previous_commit="$(gh release view "$previous" --repo "$GITHUB_REPOSITORY" \
+    --json targetCommitish --jq '.targetCommitish')"
+  [[ "$previous_commit" =~ ^[0-9a-f]{40}$ ]] || {
+    echo "Unverifiable previous draft target: $previous_commit" >&2; exit 1;
+  }
+  git cat-file -e "$previous_commit^{commit}"
+  git merge-base --is-ancestor "$previous_commit" "$GITHUB_SHA" || {
+    echo "Previous release commit is not an ancestor of this main-branch build" >&2; exit 1;
+  }
+  git show "$previous_commit:release/versions.json" > "$work/previous-versions.json"
+  # Same-commit reruns and documentation updates do not create new drafts.
+  if cmp -s release/versions.json "$work/previous-versions.json"; then
+    changes="$(git diff --name-only "$previous_commit" "$GITHUB_SHA" -- patches scripts/build scripts/deb-version.sh)"
+    if [[ -n "$changes" ]]; then
+      echo "Packaging changed without changing per-distribution versions.json revisions:" >&2
+      printf '%s\n' "$changes" >&2
+      exit 1
+    fi
+    # Never silently accept a draft left incomplete by an interrupted upload.
+    mkdir -p "$work/previous-release"
+    gh release download "$previous" --repo "$GITHUB_REPOSITORY" --dir "$work/previous-release"
+    python3 scripts/ci/verify-release.py "$work/previous-release" "$work/previous-versions.json"
+    echo "No package revision changes since $previous; its release assets are complete"
+    exit 0
+  fi
+  # Each changed source must also advance its own downstream revision.
+  python3 - "$work/previous-versions.json" release/versions.json <<'PY'
+import json
+import sys
+old, new = [json.load(open(p)) for p in sys.argv[1:]]
+for family, targets in new.items():
+    if family == "schema":
+        continue
+    for name, item in targets.items():
+        before = old.get(family, {}).get(name)
+        if before and (item["source"] != before["source"] or
+                       item["revision"] != before["revision"]):
+            if item["revision"] <= before["revision"]:
+                sys.exit(f"Must increase {family}/{name} revision for a package update")
+PY
+fi
+
+# Allocate a fresh date sequence after checking whether a release is needed.
+# A draft's tag stays unchanged when it is approved on a later day.
+stamp="$(date -u +%Y%m%d)"
+last_seq="$(printf '%s\n' "$tags" |
+  sed -nE "s/^netavark-${stamp}\.([1-9][0-9]*)$/\1/p" | sort -n | tail -n1)"
+tag="netavark-${stamp}.$(( ${last_seq:-0} + 1 ))"
+
+gh release create "$tag" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+  --draft --prerelease --title "Netavark backports $tag" \
+  --notes "Validated distribution-native Netavark backports from commit $GITHUB_SHA. Review versions.json and SHA256SUMS before publication."
+for file in "$work"/*; do
+  [[ "$(basename "$file")" == previous-versions.json ]] && continue
+  gh release upload "$tag" "$file" --repo "$GITHUB_REPOSITORY"
+done
+gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json url,isDraft,tagName,assets \
+  --jq '{url,isDraft,tagName,assets:[.assets[].name]}'
+ | head -n1 || true)"
 if [[ -n "$previous" ]]; then
   previous_commit="$(gh release view "$previous" --repo "$GITHUB_REPOSITORY" \
     --json targetCommitish --jq '.targetCommitish')"
