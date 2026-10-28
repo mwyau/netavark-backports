@@ -149,7 +149,8 @@ def submit_ppa(assets: Path, manifest: dict, targets: list[str]) -> None:
     with tempfile.TemporaryDirectory() as scratch:
         gnupg = Path(scratch) / "gnupg"
         gnupg.mkdir(mode=0o700)
-        env = os.environ | {"GNUPGHOME": str(gnupg), "GPG_TTY": ""}
+        env = {key: value for key, value in os.environ.items()
+               if key != "PPA_GPG_PRIVATE_KEY"} | {"GNUPGHOME": str(gnupg), "GPG_TTY": ""}
         subprocess.run(["gpg", "--batch", "--import"], input=secret_key,
                        text=True, check=True, env=env,
                        stdout=subprocess.DEVNULL)
@@ -163,8 +164,9 @@ def submit_ppa(assets: Path, manifest: dict, targets: list[str]) -> None:
             directory.mkdir()
             with tarfile.open(archive) as tar:
                 members = tar.getmembers()
-                if not members or any(not m.isfile() or Path(m.name).name != m.name
-                                      for m in members):
+                if (not members or len({m.name for m in members}) != len(members)
+                        or any(not m.isfile() or Path(m.name).name != m.name
+                               for m in members)):
                     sys.exit(f"Unsafe source archive: {archive.name}")
                 for member in members:
                     data = tar.extractfile(member)
@@ -218,7 +220,9 @@ def submit_obs(assets: Path, targets: list[str]) -> None:
         config_file = config_dir / "oscrc"
         config_file.write_text(config)
         config_file.chmod(0o600)
-        env = os.environ | {"HOME": home, "XDG_CONFIG_HOME": str(Path(home) / ".config")}
+        env = {key: value for key, value in os.environ.items()
+               if key != "OBS_CONFIG"} | {
+                   "HOME": home, "XDG_CONFIG_HOME": str(Path(home) / ".config")}
         for target in targets:
             leap = target.split("/")[1]
             source = json.loads((assets / "versions.json").read_text())["opensuse"][leap]

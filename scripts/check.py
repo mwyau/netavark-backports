@@ -213,6 +213,38 @@ def check_distribution() -> None:
     with patch.dict(last.__globals__, {"gh": fake_gh}):
         assert last(repo, "ppa") == tag
 
+    release_info = module["release_info"]
+    sha = "a" * 40
+
+    def fake_output(*args: str) -> str:
+        if args[:2] == ("git", "rev-parse"):
+            return sha
+        raise AssertionError(args)
+
+    def published(*args: str) -> str:
+        return json.dumps({
+            "tagName": tag, "isDraft": False, "isPrerelease": False,
+            "targetCommitish": sha, "publishedAt": "2026-10-28T00:00:00Z",
+        })
+
+    with patch.dict(release_info.__globals__, {
+        "gh": published, "output": fake_output,
+    }), patch("subprocess.run") as ancestor:
+        assert release_info(tag, repo) == sha
+        ancestor.assert_called_once()
+    def draft(*args: str) -> str:
+        return json.dumps({
+            "tagName": tag, "isDraft": True, "isPrerelease": False,
+            "targetCommitish": sha, "publishedAt": None,
+        })
+    with patch.dict(release_info.__globals__, {"gh": draft}):
+        try:
+            release_info(tag, repo)
+        except SystemExit:
+            pass
+        else:
+            raise AssertionError("Draft release passed distribution verification")
+
 if __name__ == "__main__":
     os.chdir(ROOT)
     check_scripts()
