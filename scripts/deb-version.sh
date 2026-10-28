@@ -18,7 +18,7 @@ netavark_downstream_version() {
   [[ "$revision" =~ ^[1-9][0-9]*$ ]] || { echo "Invalid revision" >&2; return 2; }
   [[ "$suite" =~ ^[a-z][a-z0-9]*$ ]] || { echo "Invalid suite" >&2; return 2; }
   dpkg --validate-version "$base"
-  version="$base+xddd$revision~$suite"
+  version="$base+~xddd$revision~$suite"
   dpkg --validate-version "$version"
   dpkg --compare-versions "$version" gt "$base" || {
     echo "Downstream package must supersede the exact native source" >&2
