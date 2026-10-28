@@ -25,7 +25,7 @@ GitHub Release publication does **not** itself submit packages to distribution r
 | Destination | Submission | Proposed environment |
 | --- | --- | --- |
 | Ubuntu PPA | Sign the Ubuntu `.dsc` and `_source.changes` with a Launchpad-registered OpenPGP key; upload each source package using `dput`. Launchpad builds the binaries. | `ppa` |
-| Fedora COPR | Submit the Fedora 43 and 44 `.src.rpm` files using `copr-cli` and a project-scoped API credential. | `copr` |
+| Fedora COPR | Submit the Fedora 43 and 44 `.src.rpm` files using `copr-cli` and an API token from a dedicated account authorized for the intended COPR project. | `copr` |
 | openSUSE OBS | Extract the Leap source RPMs and submit the SPEC, patches and source archives with `osc` to the appropriate OBS project. | `obs` |
 
 Before any submission, verify the exact **published** tag, tested commit, artifact filenames and `SHA256SUMS`. Each job must use its own environment approval and credentials, and confirm the distribution's resulting builds before considering the destination complete. None of these uploads should run during PR CI.
