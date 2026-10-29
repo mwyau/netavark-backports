@@ -71,6 +71,7 @@ jobs:
           PPA_TARGET: ${{ vars.PPA_TARGET }}
           PPA_GPG_FINGERPRINT: ${{ vars.PPA_GPG_FINGERPRINT }}
           PPA_GPG_PRIVATE_KEY: ${{ secrets.PPA_GPG_PRIVATE_KEY }}
+          PPA_GPG_PASSPHRASE: ${{ secrets.PPA_GPG_PASSPHRASE }}
         run: python3 release/distribute.py submit ppa
 
   copr:

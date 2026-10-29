@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -142,6 +143,7 @@ def submit_ppa(assets: Path, manifest: dict, targets: list[str]) -> None:
     ppa = required("PPA_TARGET")
     fingerprint = required("PPA_GPG_FINGERPRINT")
     secret_key = required("PPA_GPG_PRIVATE_KEY")
+    passphrase = required("PPA_GPG_PASSPHRASE")
     if not re.fullmatch(r"ppa:[A-Za-z0-9_.+-]+/[A-Za-z0-9_.+-]+", ppa):
         sys.exit("Invalid PPA destination")
     if not re.fullmatch(r"[A-Fa-f0-9]{40}", fingerprint):
@@ -150,7 +152,17 @@ def submit_ppa(assets: Path, manifest: dict, targets: list[str]) -> None:
         gnupg = Path(scratch) / "gnupg"
         gnupg.mkdir(mode=0o700)
         env = {key: value for key, value in os.environ.items()
-               if key != "PPA_GPG_PRIVATE_KEY"} | {"GNUPGHOME": str(gnupg), "GPG_TTY": ""}
+               if key not in ("PPA_GPG_PRIVATE_KEY", "PPA_GPG_PASSPHRASE")} | {
+                   "GNUPGHOME": str(gnupg), "GPG_TTY": ""}
+        passphrase_file = Path(scratch) / "passphrase"
+        passphrase_file.write_text(passphrase + "\n")
+        passphrase_file.chmod(0o600)
+        wrapper = Path(scratch) / "gpg-loopback"
+        wrapper.write_text(
+            "#!/bin/sh\nexec /usr/bin/gpg --batch --no-tty --pinentry-mode loopback "
+            "--passphrase-file " + shlex.quote(str(passphrase_file)) + ' "$@"\n'
+        )
+        wrapper.chmod(0o700)
         subprocess.run(["gpg", "--batch", "--import"], input=secret_key,
                        text=True, check=True, env=env,
                        stdout=subprocess.DEVNULL)
@@ -177,11 +189,11 @@ def submit_ppa(assets: Path, manifest: dict, targets: list[str]) -> None:
             changes = list(directory.glob("*_source.changes"))
             if len(changes) != 1 or len(list(directory.glob("*.dsc"))) != 1:
                 sys.exit(f"Incomplete PPA source: {suite}")
-            run("debsign", "--re-sign", f"-k{fingerprint}", str(changes[0]), env=env)
+            run("debsign", "--re-sign", "-p", str(wrapper), f"-k{fingerprint}", str(changes[0]), env=env)
             run("dput", ppa, str(changes[0]), env=env)
 
 
-def submit_copr(assets: Path, targets: list[str]) -> None:
+def submit_copr(assets: Path, manifest: dict, targets: list[str]) -> None:
     project = required("COPR_PROJECT")
     config = required("COPR_CONFIG")
     if not re.fullmatch(r"[A-Za-z0-9_.+-]+/[A-Za-z0-9_.+-]+", project):
@@ -194,8 +206,13 @@ def submit_copr(assets: Path, targets: list[str]) -> None:
         config_file.chmod(0o600)
         for target in targets:
             fedora = target.split("/")[1]
-            source = next((f for f in assets.glob(f"netavark-*.fc{fedora}.src.rpm")), None)
-            if source is None:
+            native = manifest["fedora"][fedora]
+            suffix = f".fc{fedora}"
+            if not native["source"].endswith(suffix):
+                sys.exit(f"Invalid Fedora source suffix for {fedora}")
+            version = f"{native['source'][:-len(suffix)]}.xddd{native['revision']}{suffix}"
+            source = assets / f"netavark-{version}.src.rpm"
+            if not source.is_file():
                 sys.exit(f"Missing Fedora {fedora} source RPM")
             # The COPR client runs in a Fedora image; no host tools are installed.
             run("docker", "run", "--rm", "--pull=always",
@@ -232,8 +249,9 @@ def submit_obs(assets: Path, targets: list[str]) -> None:
             if not entry.is_file():
                 sys.exit(f"Missing openSUSE {leap} source RPM")
             with tempfile.TemporaryDirectory() as work:
-                run("osc", "importsrcpkg", "--commit", "--project", projects[leap],
-                    "--name", "netavark", str(entry), cwd=work, env=env)
+                run("osc", "importsrcpkg", "--commit", "--delete-old-files",
+                    "--project", projects[leap], "--name", "netavark",
+                    str(entry), cwd=work, env=env)
 
 
 def submit(destination: str, tag: str, repo: str, requested: list[str]) -> None:
@@ -256,7 +274,7 @@ def submit(destination: str, tag: str, repo: str, requested: list[str]) -> None:
         if destination == "ppa":
             submit_ppa(assets, current, requested)
         elif destination == "copr":
-            submit_copr(assets, requested)
+            submit_copr(assets, current, requested)
         else:
             submit_obs(assets, requested)
 
