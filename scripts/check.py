@@ -311,11 +311,11 @@ def check_distribution_commands() -> None:
             "PPA_GPG_PASSPHRASE": "PPA_TEST_PASSPHRASE",
         }
         with patch.dict(os.environ, env), patch.dict(module["submit_ppa"].__globals__, {
-            "required": ppa_need,
+            "required": ppa_need, "run": fake_run,
         }), patch("subprocess.run", side_effect=fake_run):
             module["submit_ppa"](assets, manifest, ["ubuntu/resolute"])
-        assert any(args[0] == "debsign" for args in calls)
-        assert any(args[0] == "dput" for args in calls)
+        assert any(args[0] == "debsign" for args in calls), calls
+        assert any(args[0] == "dput" for args in calls), calls
 
         # OBS must use the version from the release lock and separate projects.
         leap = manifest["opensuse"]["16.0"]
