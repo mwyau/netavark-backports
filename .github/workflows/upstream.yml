@@ -1,0 +1,106 @@
+name: Check upstream
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/upstream.yml
+      - release/versions.py
+      - scripts/build/deb.sh
+      - scripts/build/fedora.sh
+      - scripts/build/opensuse.sh
+  schedule:
+    - cron: '23 7 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: netavark-source-check-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  check:
+    name: source / ${{ matrix.family }} / ${{ matrix.target }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {family: debian, target: trixie, image: 'debian:trixie'}
+          - {family: debian, target: forky, image: 'debian:forky'}
+          - {family: debian, target: sid, image: 'debian:sid'}
+          - {family: debian, target: experimental, image: 'debian:sid'}
+          - {family: ubuntu, target: resolute, image: 'ubuntu:resolute'}
+          - {family: ubuntu, target: stonking, image: 'ubuntu:stonking'}
+          - {family: fedora, target: '43', image: 'fedora:43'}
+          - {family: fedora, target: '44', image: 'fedora:44'}
+          - {family: opensuse, target: '16.0', image: 'opensuse/leap:16.0'}
+          - {family: opensuse, target: '16.1', image: 'opensuse/leap:16.1'}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Compare with native source repository
+        shell: bash
+        env:
+          FAMILY: ${{ matrix.family }}
+          TARGET: ${{ matrix.target }}
+          IMAGE: ${{ matrix.image }}
+        run: |
+          set -euo pipefail
+          common=(--rm --pull=always -v "$GITHUB_WORKSPACE:/work" -w /work
+            -e SOURCE_CHECK_ONLY=1 -e SOURCE_DISCOVERY_ONLY=1
+            -e "SOURCE_DISCOVERY_FILE=/work/discovered/${FAMILY}-${TARGET}.txt")
+          case "$FAMILY" in
+            debian|ubuntu)
+              docker run "${common[@]}" -e "SUITE=$TARGET" -e EXPECTED_ARCH=amd64 \
+                "$IMAGE" bash /work/scripts/build/deb.sh ;;
+            fedora)
+              docker run "${common[@]}" -e "FEDORA_RELEASE=$TARGET" -e EXPECTED_ARCH=x86_64 \
+                "$IMAGE" bash /work/scripts/build/fedora.sh ;;
+            opensuse)
+              docker run "${common[@]}" -e "LEAP_VERSION=$TARGET" -e EXPECTED_ARCH=x86_64 \
+                "$IMAGE" bash /work/scripts/build/opensuse.sh ;;
+            *) exit 2 ;;
+          esac
+      - name: Validate discovered source version
+        env:
+          FAMILY: ${{ matrix.family }}
+          TARGET: ${{ matrix.target }}
+        run: |
+          file="discovered/${FAMILY}-${TARGET}.txt"
+          test -s "$file"
+          python3 release/versions.py --check "$FAMILY" "$TARGET" "$(cat "$file")"
+      - name: Upload discovered native source
+        uses: actions/upload-artifact@v7
+        with:
+          name: native-${{ matrix.family }}-${{ matrix.target }}
+          path: discovered/${{ matrix.family }}-${{ matrix.target }}.txt
+          if-no-files-found: error
+          retention-days: 7
+
+  propose:
+    name: Propose changed native sources for review
+    needs: [check]
+    if: always() && github.event_name != 'pull_request' && needs.check.result != 'cancelled'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: true
+          fetch-depth: 0
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: native-*
+          merge-multiple: true
+          path: discovered
+      - name: Create/update per-distribution review PRs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/updates.py propose

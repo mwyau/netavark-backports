@@ -1,0 +1,204 @@
+name: Build and test
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: netavark-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  plan:
+    name: Select changed package targets
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      deb: ${{ steps.plan.outputs.deb }}
+      rpm: ${{ steps.plan.outputs.rpm }}
+      has_deb: ${{ steps.plan.outputs.has_deb }}
+      has_rpm: ${{ steps.plan.outputs.has_rpm }}
+      release: ${{ steps.plan.outputs.release }}
+      base_tag: ${{ steps.base.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Check automation and release logic
+        run: python3 scripts/check.py
+      - name: Find most recent release snapshot
+        id: base
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="$(python3 release/release.py latest)"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          if [[ "${{ github.ref }}" == refs/heads/main && -n "$tag" ]]; then
+            sha="$(gh release view "$tag" --json targetCommitish --jq .targetCommitish)"
+            [[ "$sha" =~ ^[0-9a-f]{40}$ ]]
+            git cat-file -e "$sha^{commit}"
+            echo "BASE_REF=$sha" >> "$GITHUB_ENV"
+          elif [[ "${{ github.ref }}" == refs/heads/main ]]; then
+            echo "BASE_REF=" >> "$GITHUB_ENV"
+          else
+            echo "BASE_REF=origin/main" >> "$GITHUB_ENV"
+          fi
+      - name: Calculate native build matrices
+        id: plan
+        env:
+          EVENT_NAME: ${{ github.ref == 'refs/heads/main' && 'push' || github.event_name }}
+        run: python3 scripts/plan.py
+
+  deb:
+    name: deb / ${{ matrix.os }}-${{ matrix.suite }} / ${{ matrix.arch }}
+    needs: [plan]
+    if: needs.plan.outputs.has_deb == 'true'
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 180
+    continue-on-error: ${{ matrix.suite == 'experimental' }}
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.deb) }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Build native deb, test Podman and dual-stack Podman
+        env:
+          SUITE: ${{ matrix.suite }}
+          EXPECTED_ARCH: ${{ matrix.arch }}
+        run: python3 scripts/build.py deb
+      - name: Upload native Debian source package
+        if: success() && matrix.arch == 'amd64' && matrix.suite != 'experimental'
+        uses: actions/upload-artifact@v7
+        with:
+          name: source-deb-${{ matrix.suite }}
+          path: dist/${{ matrix.suite }}/${{ matrix.arch }}/source/*
+          if-no-files-found: error
+          retention-days: 30
+      - name: Attach individual uncompressed Debian/Ubuntu package
+        if: success()
+        uses: actions/upload-artifact@v7
+        with:
+          # v7 archive:false stores the ORIGINAL single .deb, not a ZIP.
+          archive: false
+          path: dist/${{ matrix.suite }}/${{ matrix.arch }}/netavark_*_${{ matrix.arch }}.deb
+          if-no-files-found: error
+          retention-days: 30
+
+  rpm:
+    name: rpm / ${{ matrix.label }} / ${{ matrix.arch }}
+    needs: [plan]
+    if: needs.plan.outputs.has_rpm == 'true'
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 180
+    # All supported RPM targets must pass their network tests.
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.rpm) }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Native Fedora/openSUSE source RPM build and IPv4/IPv6 tests
+        env:
+          RPM_PLATFORM: ${{ matrix.platform }}
+          RPM_IMAGE: ${{ matrix.image }}
+          RPM_ARCH: ${{ matrix.arch }}
+        run: python3 scripts/build.py rpm
+      - name: Upload native source RPM
+        if: success() && matrix.arch == 'x86_64'
+        uses: actions/upload-artifact@v7
+        with:
+          archive: false
+          path: dist/${{ matrix.platform }}/${{ matrix.arch }}/source/netavark-*.src.rpm
+          if-no-files-found: error
+          retention-days: 30
+      - name: Upload native RPM
+        if: success()
+        uses: actions/upload-artifact@v7
+        with:
+          archive: false
+          path: dist/${{ matrix.platform }}/${{ matrix.arch }}/netavark-*.rpm
+          if-no-files-found: error
+          retention-days: 30
+
+  verify-release:
+    name: Verify complete release candidate
+    needs: [plan, deb, rpm]
+    if: always() && github.ref == 'refs/heads/main' && needs.plan.outputs.release == 'true' && needs.plan.result == 'success' && (needs.deb.result == 'success' || needs.deb.result == 'skipped') && (needs.rpm.result == 'success' || needs.rpm.result == 'skipped')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v8
+        with:
+          path: incoming
+      - name: Verify changed builds against full release snapshot
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE_TAG: ${{ needs.plan.outputs.base_tag }}
+        run: python3 release/release.py prepare incoming candidate
+      - name: Preserve the exact validated release candidate
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-candidate
+          path: candidate/*
+          if-no-files-found: error
+          retention-days: 7
+
+  draft-release:
+    name: Create draft on validated main
+    needs: [plan, verify-release]
+    if: github.ref == 'refs/heads/main' && needs.plan.outputs.release == 'true' && needs.verify-release.result == 'success'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/download-artifact@v8
+        with:
+          name: release-candidate
+          path: candidate
+      - name: Create unpublished release draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE_TAG: ${{ needs.plan.outputs.base_tag }}
+        run: python3 release/release.py draft candidate
+
+  merge-update:
+    name: Merge tested source updates
+    needs: [plan, deb, rpm]
+    if: always() && github.event_name == 'workflow_dispatch' && startsWith(github.ref_name, 'bot/update-') && needs.plan.result == 'success' && (needs.deb.result == 'success' || needs.deb.result == 'skipped') && (needs.rpm.result == 'success' || needs.rpm.result == 'skipped')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Merge the validated source-update PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: ${{ github.ref_name }}
+          EXPECTED_SHA: ${{ github.sha }}
+        run: python3 scripts/updates.py merge

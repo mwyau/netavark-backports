@@ -1,88 +1,41 @@
-# Netavark Debian published-port backport (unofficial)
+# Netavark Backports
 
-Rebuilds **Debian's native Netavark source package** with a version-specific Debian quilt backport of the nftables parts of
-[netavark PR #1483](https://github.com/containers/netavark/pull/1483).
-Source and packaging come from Debian; this repository stores version-specific
-**unified diff quilt patches**, build scripts, tests, and CI. The build fetches
-Debian source directly; no upstream fork or source-rewriting helper is needed.
-It does **not** replace Podman or Aardvark DNS.
+Distribution-native packages carrying the fix for published ports across isolated Podman networks.
 
-**Experimental, not validated in a container network regression test. Do not
-install on production DNS solely because CI builds.**
+[Issue #709](https://github.com/containers/netavark/issues/709) describes the problem: traffic between isolated bridges is blocked even when a service is reached through a published host port. [PR #1483](https://github.com/containers/netavark/pull/1483) fixes it. This project applies that change to distributions shipping older Netavark versions and tests both new networks and upgrades of running Podman containers.
 
-## CI targets
+## Distributions
 
-| Debian suite | Source revision (pinned) | Netavark family | Architectures | Status |
-|---|---|---|---|---|
-| trixie | 1.14.0-2 | 1.14 | amd64 / arm64 | Candidate |
-| forky | 1.17.2-3 | 1.17 | amd64 / arm64 | Candidate |
-| sid | 1.17.2-3 | 1.17 | amd64 / arm64 | Candidate |
-| experimental | 2.0.0-1 | 2.0 | amd64 / arm64 | Experimental (allowed failure in CI) |
+| Distribution | Version family | Package |
+| --- | --- | --- |
+| Debian Trixie | 1.14 | DEB |
+| Debian Forky, Sid | 1.17 | DEB |
+| Ubuntu Resolute, Stonking | 1.16, 1.17 | DEB |
+| Fedora 43, 44 | 1.17 | RPM |
+| openSUSE Leap 16.0, 16.1 | 1.14, 1.17 | RPM |
+| Debian Experimental | 2.0 | Build experiment |
 
-The script **fails closed** if the Debian source version changes or the source
-code no longer matches the expected patch anchors. Bookworm is intentionally
-unsupported. Experimental uses Sid as a base with Debian experimental enabled;
-**Netavark 2.x requires Podman 6.x** and is not appropriate for Podman 5.4.2.
+AMD64/x86-64 and ARM64/AArch64 are tested in GitHub Actions. Both Leap releases passed the native build and dual-stack networking matrix and are included in validated release candidates.
 
-### Versioning
+## Building
 
-Outputs follow `<Debian-version>+0xddd1~<suite>`, for example
-`1.14.0-2+0xddd1~trixie`. They supersede the packaged base version but generally
-sort before a later Debian security revision such as `+deb13u1`. **An official
-update can replace this patch**, so monitor Debian uploads.
+The scripts fetch each distribution's Netavark source, apply the matching patch from [`patches/`](patches/) and build with the distribution's own Debian or RPM tooling.
 
-### Patch inputs
-
-- `patches/1.14/0001-allow-published-ports-across-isolated-bridges.patch`
-- `patches/1.17/0001-allow-published-ports-across-isolated-bridges.patch`
-- `patches/2.0/0001-allow-published-ports-across-isolated-bridges.patch`
-
-The build copies the matching patch into `debian/patches`, adds it to the
-`series` file, and applies it with `quilt push`. Patch failure fails the job.
-
-### Verification
-
-All eight suite/architecture combinations build Debian packages and validate
-the resulting `.deb` metadata and packaged binary's `--version`. A separate
-privileged CI test on **Trixie amd64 and arm64** installs the generated package
-into an isolated Debian container, creates two isolated Podman bridges,
-publishes a TCP port, and attempts a connection through the host port. The
-integration job also checks for nftables DNAT and FORWARD mark rules.
-
-The Debian `dh_auto_test` step in the initial successful run invoked a Cargo
-build, **not the Rust unit-test suite**; additional unit-test coverage is still
-needed. Other Debian suites currently have package-build verification rather
-than equivalent Podman integration coverage.
-
-### Native build
-
-In an amd64 or arm64 Linux environment with Docker:
+For Debian Trixie on an AMD64 Docker host:
 
 ```sh
-docker run --rm --pull=always -v "$PWD:/work" -w /work \
-  -e SUITE=trixie -e EXPECTED_ARCH=arm64 -e REVISION=1 \
-  debian:trixie bash scripts/build.sh
+docker run --rm --pull=always \
+  -v "$PWD:/work" -w /work \
+  -e SUITE=trixie -e EXPECTED_ARCH=amd64 -e REVISION=1 \
+  debian:trixie bash scripts/build/deb.sh
 ```
 
-`EXPECTED_ARCH` must match the actual container architecture. For x86-64, use
-`amd64`; for experimental, use `debian:sid` and `SUITE=experimental`.
-Artifacts appear under `dist/<suite>/<arch>/` with `.deb`, `.dsc`, Debian
-source components, build records, and checksums. Building does not touch host
-networking or replace installed packages.
+The resulting packages and source files are saved in `dist/`. Fedora and openSUSE builds use their corresponding scripts under `scripts/build/`.
 
-### CI artifacts and draft releases
+## Downloads and development
 
-GitHub Actions artifacts are ZIP archives, even when an artifact contains a
-single `.deb`. After every successful main-branch build matrix, a separate CI
-job collects the eight `.deb` files and attaches them **directly as raw release
-assets**, plus `SHA256SUMS-release`, to a **draft prerelease**
-tagged `ci-<commit>`. A draft is not published as a final release. Its notes
-include the actual integration-job result (success or failure).
+[GitHub Actions](.github/workflows/ci.yml) builds and tests candidate binaries with Podman on isolated IPv4/IPv6 networks. Passing jobs attach their original DEB/RPM files and distribution source packages as workflow artifacts.
 
-No package is installed on a production system. Do not promote a draft until
-the cross-bridge regression, dual-stack checks, package policy review,
-and rollback strategy are validated. Deployment may require safely regenerating
-Netavark's existing nftables rules during a maintenance window.
+After a release change is merged and the main-branch tests pass, CI prepares a **draft GitHub Release**. Native source versions and independent per-distribution downstream revisions are recorded in [`release/versions.json`](release/versions.json). Publication to [GitHub Releases](../../releases), an Ubuntu PPA, Fedora COPR or a Debian APT repository is separate.
 
-The `xddd` suffix is a downstream package marker; no Debian or Netavark
-upstream affiliation is claimed.
+See [release instructions](release/README.md) for package versioning, source artifacts and publication.
