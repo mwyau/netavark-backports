@@ -245,6 +245,95 @@ def check_distribution() -> None:
         else:
             raise AssertionError("Draft release passed distribution verification")
 
+
+def check_distribution_commands() -> None:
+    """Exercise exact source selection and credential handling without uploading."""
+    import io
+    import tarfile
+    from unittest.mock import patch
+
+    module = runpy.run_path("release/distribute.py")
+    manifest = json.loads(Path("release/versions.json").read_text())
+    with tempfile.TemporaryDirectory() as temp:
+        assets = Path(temp)
+        # COPR must choose the exact reviewed Fedora source RPM, not a fuzzy glob.
+        item = manifest["fedora"]["43"]
+        suffix = ".fc43"
+        version = item["source"][:-len(suffix)] + f".xddd{item['revision']}" + suffix
+        source = assets / f"netavark-{version}.src.rpm"
+        source.write_bytes(b"fake SRPM")
+        cmds = []
+        def need(name: str) -> str:
+            return {
+                "COPR_PROJECT": "tester/netavark",
+                "COPR_CONFIG": "[copr-cli]\ntoken = dummy",
+            }[name]
+        with patch.dict(module["submit_copr"].__globals__, {
+            "required": need, "run": lambda *args: cmds.append(args),
+        }):
+            module["submit_copr"](assets, manifest, ["fedora/43"])
+        assert len(cmds) == 1
+        command = cmds[0]
+        assert "--chroot" in command
+        assert "fedora-43-x86_64" in command
+        assert "fedora-43-aarch64" in command
+        assert f"/assets/{source.name}" in command
+
+        # Sign from a temporary GnuPG home; don't expose secrets to commands.
+        ubuntu = manifest["ubuntu"]["resolute"]
+        archive = assets / f"netavark-source-resolute-ppaxddd{ubuntu['revision']}.tar.gz"
+        with tarfile.open(archive, "w:gz") as tar:
+            for name in ("netavark_example.dsc", "netavark_example_source.changes"):
+                contents = b"test source metadata\n"
+                info = tarfile.TarInfo(name)
+                info.size = len(contents)
+                tar.addfile(info, io.BytesIO(contents))
+        calls = []
+        def fake_run(*args, **kwargs):
+            if args and args[0] == "debsign":
+                wrapper = Path(args[args.index("-p") + 1])
+                text = wrapper.read_text()
+                assert "--pinentry-mode loopback" in text
+                assert "PPA_TEST_PASSPHRASE" not in text
+                assert text.endswith(' "$@"\n')
+            assert "PPA_GPG_PRIVATE_KEY" not in kwargs.get("env", {})
+            assert "PPA_GPG_PASSPHRASE" not in kwargs.get("env", {})
+            calls.append(args)
+        def ppa_need(name: str) -> str:
+            return {
+                "PPA_TARGET": "ppa:tester/netavark",
+                "PPA_GPG_FINGERPRINT": "a" * 40,
+                "PPA_GPG_PRIVATE_KEY": "PRIVATE_TEST_KEY",
+                "PPA_GPG_PASSPHRASE": "PPA_TEST_PASSPHRASE",
+            }[name]
+        env = {
+            "PPA_GPG_PRIVATE_KEY": "PRIVATE_TEST_KEY",
+            "PPA_GPG_PASSPHRASE": "PPA_TEST_PASSPHRASE",
+        }
+        with patch.dict(os.environ, env), patch.dict(module["submit_ppa"].__globals__, {
+            "required": ppa_need,
+        }), patch("subprocess.run", side_effect=fake_run):
+            module["submit_ppa"](assets, manifest, ["ubuntu/resolute"])
+        assert any(args[0] == "debsign" for args in calls)
+        assert any(args[0] == "dput" for args in calls)
+
+        # OBS must use the version from the release lock and separate projects.
+        leap = manifest["opensuse"]["16.0"]
+        obs_file = assets / f"netavark-{leap['source']}.xddd{leap['revision']}.src.rpm"
+        obs_file.write_bytes(b"fake Leap SRPM")
+        obs_calls = []
+        def obs_need(name: str) -> str:
+            return {
+                "OBS_CONFIG": "[general]\napiurl = https://api.opensuse.org",
+                "OBS_PROJECT_16_0": "home:tester:netavark:16.0",
+            }[name]
+        with patch.dict(module["submit_obs"].__globals__, {
+            "required": obs_need, "run": lambda *args, **kwargs: obs_calls.append(args),
+        }):
+            module["submit_obs"](assets, ["opensuse/16.0"])
+        assert len(obs_calls) == 1 and obs_calls[0][-1] == str(obs_file)
+        assert "--delete-old-files" in obs_calls[0]
+
 if __name__ == "__main__":
     os.chdir(ROOT)
     check_scripts()
@@ -255,4 +344,5 @@ if __name__ == "__main__":
     check_release(current)
     check_merge()
     check_distribution()
+    check_distribution_commands()
     print("PASS: script syntax, version discovery and ordering, CI planning, merges, releases")
