@@ -320,6 +320,7 @@ def check_distribution_commands() -> None:
         # OBS must use the version from the release lock and separate projects.
         leap = manifest["opensuse"]["16.0"]
         obs_file = assets / f"netavark-{leap['source']}.xddd{leap['revision']}.src.rpm"
+        (assets / "versions.json").write_text(json.dumps(manifest))
         obs_file.write_bytes(b"fake Leap SRPM")
         obs_calls = []
         def obs_need(name: str) -> str:
