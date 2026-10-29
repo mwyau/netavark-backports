@@ -160,7 +160,7 @@ def submit_ppa(assets: Path, manifest: dict, targets: list[str]) -> None:
         wrapper = Path(scratch) / "gpg-loopback"
         wrapper.write_text(
             "#!/bin/sh\nexec /usr/bin/gpg --batch --no-tty --pinentry-mode loopback "
-            "--passphrase-file " + shlex.quote(str(passphrase_file)) + ' "$@"\\n'
+            "--passphrase-file " + shlex.quote(str(passphrase_file)) + ' "$@"\n'
         )
         wrapper.chmod(0o700)
         subprocess.run(["gpg", "--batch", "--import"], input=secret_key,
